@@ -1,0 +1,33 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Local machine settings; see .env.example for the template
+.env
+
+# Proprietary source documents (I-ETMS specs, WCR API stubs, track reports,
+# reference examples) — never committed. Each machine points config.yaml at
+# its own copy; see README for how to obtain them.
+data/
+
+# Rebuildable from data/ by scripts/run_ingestion.py
+chroma_db/
+
+# Frontend
+node_modules/
+dist/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

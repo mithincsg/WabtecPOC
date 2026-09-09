@@ -1,0 +1,85 @@
+# --- Knowledge-base ingestion -------------------------------------------
+#
+# Three source roots, each parsed by the tool that suits its format:
+#   knowledge_base/ -> PDF (PyMuPDF), XLSX (openpyxl), TXT
+#   python_apis/    -> .py/.pyi (stdlib ast)
+#   track_data/     -> .html (stdlib html.parser)
+#
+# `document_type` is stamped on every chunk from a root and is what the
+# retriever filters on. Set `subfolders_as_type: true` to let an immediate
+# subfolder name override it (e.g. knowledge_base/reference_test_cases/
+# -> document_type "reference_test_cases"), so you can group documents
+# without editing code.
+
+sources:
+  - path: data/knowledge_base
+    document_type: knowledge_base
+    subfolders_as_type: true
+  # Disabled: only data/knowledge_base is ingested into the vector DB.
+  # - path: data/python_apis
+  #   document_type: python_apis
+  #   subfolders_as_type: false
+  # - path: data/track_data
+  #   document_type: track_data
+  #   subfolders_as_type: false
+
+# --- Static context (never embedded, never written to ChromaDB) ---------
+#
+# These folders still matter to generation, but python_apis is one big stub
+# file and track_data is thousands of per-subdivision feature rows — neither
+# is prose an embedding model gains anything from, and both contain exact
+# identifiers (API names, block numbers) that keyword search is already
+# better at than dense retrieval. So they're parsed with the same extractors
+# as `sources` above, but read fresh from disk into an in-process, BM25-only
+# index (src/rag/static_context.py) instead of being embedded and upserted.
+static_sources:
+  - path: data/python_apis
+    document_type: python_apis
+    subfolders_as_type: false
+  - path: data/track_data
+    document_type: track_data
+    subfolders_as_type: false
+
+# Few-shot requirement -> reference-test-case -> reference-script examples.
+# Always included in full for every generation request (not searched, not
+# truncated) — small enough (a handful of requirements) that there's no
+# reason to rank or budget it.
+examples_dir: data/Examples
+
+# --- Chunking ------------------------------------------------------------
+#
+# Structure decides the boundaries; these are only a ceiling. A PDF section,
+# a spreadsheet row, a Python method and an HTML track section each become
+# one chunk regardless of size, and the token budget applies only when a
+# single one of those exceeds it — roughly 6% of units in the current corpus,
+# almost all of them track-data sections that are genuinely tens of thousands
+# of tokens.
+#
+# 512 is well under bge-m3's 8192-token limit, which favours retrieval
+# precision: a short chunk's embedding is dominated by the thing being asked
+# about, while a 4000-token section averages out into something that matches
+# everything weakly. Raise it if oversized units are being cut mid-thought;
+# doing so changes the pipeline fingerprint, so the next run re-embeds
+# everything once.
+chunk_max_tokens: 512
+# Overlap applies only when a unit had to be split, so consecutive pieces
+# share context across the cut. Never used between two separate units.
+chunk_overlap_tokens: 50
+# 1 = each spreadsheet row (one logical test case) is its own chunk and is
+# never merged with another row's.
+xlsx_max_rows_per_chunk: 1
+
+# --- PDF structure detection (PyMuPDF) -----------------------------------
+# Unnumbered headings must be bold and larger than body text by this ratio.
+pdf_heading_size_ratio: 1.15
+# A table repeated on >= this fraction of pages is running boilerplate.
+pdf_table_repeat_threshold: 0.5
+
+# --- Embeddings ----------------------------------------------------------
+embedding_model: BAAI/bge-m3
+embedding_batch_size: 16
+embedding_device: auto   # auto | cpu | cuda
+
+# --- Vector store --------------------------------------------------------
+chroma_persist_dir: chroma_db
+chroma_collection: kb_collection

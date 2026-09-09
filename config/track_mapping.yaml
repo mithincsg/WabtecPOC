@@ -1,0 +1,23 @@
+# Requirement -> track-data mapping.
+#
+# The track_data/ folder holds one HTML subdivision report per subdivision
+# (08101, 08880, ...). Only the subdivisions listed for a requirement are
+# retrieved for it, so a Speed Enforcement requirement tested on 08880
+# never pulls in unrelated 08101 track features.
+#
+# Keys are requirement IDs as they appear in the requirement text; values
+# are subdivision IDs, matched against the `subdivision` metadata the HTML
+# extractor reads out of each report ("Subdivision \"08880\"").
+# Add a row when a requirement starts being tested on new track.
+
+mappings:
+  L2R9479: ["08880"]
+  L2R7983: ["08101"]
+  L2R10673: ["08102"]
+  L2R1145424: ["08214"]
+
+# What to do for a requirement that has no row above:
+#   exclude -> skip track data entirely (recommended; avoids pulling in
+#              thousands of irrelevant track-feature rows)
+#   all     -> search every subdivision
+unmapped: exclude
