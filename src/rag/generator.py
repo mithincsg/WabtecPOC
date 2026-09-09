@@ -64,7 +64,6 @@ class TestCaseGenerator:
         scorer: ConfidenceScorer,
         static_context: StaticContextProvider | None = None,
         static_track_top_k: int = 4,
-        example_max_chars: int | None = None,
     ):
         self.retriever = retriever
         self.llm_client = llm_client
@@ -72,7 +71,6 @@ class TestCaseGenerator:
         self.scorer = scorer
         self.static_context = static_context
         self.static_track_top_k = static_track_top_k
-        self.example_max_chars = example_max_chars
 
     def generate(
         self,
@@ -98,32 +96,11 @@ class TestCaseGenerator:
             top_k=top_k,
         )
 
-        # The three blocks are labelled, not just concatenated: the first two
-        # are where values may come from, the third is only a wording model.
-        # Unlabelled, the examples read as just more context and their block
-        # numbers and TBC values get copied into the new test cases.
-        track_context = self._static_track_context(parsed)
-        examples = (
-            self.static_context.test_case_examples(self.example_max_chars)
-            if self.static_context
-            else ""
-        )
+        context = retrieval.context or "(Nothing in the knowledge base matched this requirement.)"
         context = _append_static_context(
-            _labelled(
-                "KNOWLEDGE BASE — parameters, data dictionaries, test guide",
-                retrieval.context
-                or "(Nothing in the knowledge base matched this requirement.)",
-            ),
-            _labelled(
-                "TRACK DATA — the only source of subdivision, block, milepost, "
-                "switch and signal values for this requirement",
-                track_context,
-            ),
-            _labelled(
-                "WORDING TEMPLATE — examples from other requirements; copy their "
-                "phrasing, never their values",
-                examples,
-            ),
+            context,
+            self._static_track_context(parsed),
+            self.static_context.examples_context if self.static_context else "",
         )
 
         prompt = self.prompts.test_cases
@@ -186,9 +163,6 @@ class TestScriptGenerator:
         static_context: StaticContextProvider | None = None,
         static_api_top_k: int = 4,
         static_track_top_k: int = 4,
-        kb_top_k: int | None = None,
-        example_top_k: int = 1,
-        example_max_chars: int | None = None,
     ):
         self.retriever = retriever
         self.llm_client = llm_client
@@ -199,9 +173,6 @@ class TestScriptGenerator:
         self.static_context = static_context
         self.static_api_top_k = static_api_top_k
         self.static_track_top_k = static_track_top_k
-        self.kb_top_k = kb_top_k
-        self.example_top_k = example_top_k
-        self.example_max_chars = example_max_chars
 
     def generate(
         self, requirement_text: str, test_cases: list[TestCase]
@@ -214,19 +185,9 @@ class TestScriptGenerator:
 
         # Retrieval for the script is driven by the test cases as well as the
         # requirement: the specific behaviours being automated are what
-        # determine which API calls, which track features and which
-        # parameters are relevant.
+        # determine which API calls and which reference script are relevant.
         query = "\n".join([parsed.query_text, *(tc.description for tc in test_cases)])
 
-        # Four context blocks, kept separate because they play four different
-        # roles and the model must not confuse them. The API stubs say what
-        # may be called and with which keyword arguments; the track and
-        # parameter blocks are the *only* places a concrete value may come
-        # from; the examples supply the shape of the file and nothing else.
-        # Before these last two existed, the reference scripts were the sole
-        # source of subdivisions, blocks, mileposts and TBC values in the
-        # prompt — so the model copied them, which is exactly what it should
-        # not do.
         api_context = (
             self.static_context.api_context(query, self.static_api_top_k)
             if self.static_context
@@ -239,22 +200,14 @@ class TestScriptGenerator:
             if self.static_context
             else ""
         )
-        parameter_context = (
-            ""
-            if self.kb_top_k == 0
-            else self.retriever.retrieve(
-                query,
-                requirement_id=parsed.requirement_id,
-                top_k=self.kb_top_k,
-            ).context
-        )
-        reference_scripts = (
-            self.static_context.script_examples(
-                query, self.example_top_k, self.example_max_chars
-            )
-            if self.static_context
-            else ""
-        )
+        reference_scripts = self.static_context.examples_context if self.static_context else ""
+        # Parameter names/values, message/event names and defaults live in
+        # the knowledge-base data dictionaries — the same general retrieval
+        # pass test-case generation uses, just re-run against the script's
+        # query (requirement + the approved test-case descriptions).
+        parameter_context = self.retriever.retrieve(
+            query, requirement_id=parsed.requirement_id
+        ).context
 
         prompt = self.prompts.test_script
         user_prompt = prompt.render_user(
@@ -262,10 +215,8 @@ class TestScriptGenerator:
             requirement_text=parsed.raw_text.strip(),
             test_cases=_numbered_test_cases(test_cases),
             api_context=api_context or "(No API definitions were retrieved.)",
-            track_context=track_context
-            or "(No track-data records matched — every track value must be a TODO variable.)",
-            parameter_context=parameter_context
-            or "(No parameter or data-dictionary context matched — every parameter value must be a TODO variable.)",
+            track_context=track_context or "(No track data was retrieved.)",
+            parameter_context=parameter_context or "(No parameter/data-dictionary context was retrieved.)",
             reference_scripts=reference_scripts or "(No reference scripts were retrieved.)",
         )
 
@@ -282,16 +233,6 @@ class TestScriptGenerator:
 def _append_static_context(context: str, *extra_blocks: str) -> str:
     blocks = [context, *(b for b in extra_blocks if b)]
     return "\n\n---\n\n".join(blocks)
-
-
-def _labelled(label: str, body: str) -> str:
-    """Headers the model can be pointed at by name. An empty body yields an
-    empty string, so a missing block is dropped rather than announced as a
-    heading with nothing under it.
-    """
-    if not body.strip():
-        return ""
-    return f"=== {label} ===\n{body}"
 
 
 def _folder_hint(parsed: ParsedRequirement) -> str:

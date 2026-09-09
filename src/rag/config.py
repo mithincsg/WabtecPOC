@@ -14,13 +14,13 @@ class RetrievalConfig:
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str = "auto"
 
-    top_k: int = 14
+    top_k: int = 10
     candidates_per_arm: int = 30
     dense_weight: float = 1.0
     keyword_weight: float = 0.6
     rrf_k: int = 60
     min_similarity: float = 0.0
-    max_context_chars: int = 14000
+    max_context_chars: int = 9000
 
     doc_types: list[str] = field(default_factory=list)
     track_data_doc_type: str = "track_data"
@@ -28,17 +28,6 @@ class RetrievalConfig:
 
     static_api_top_k: int = 4
     static_track_top_k: int = 4
-    # Depth of the knowledge-base pass run for script generation, so the
-    # script prompt carries the parameters and defaults its values must come
-    # from rather than only the reference scripts. 0 disables it.
-    script_kb_top_k: int = 6
-    # Examples are template material, so they are budgeted rather than sent
-    # whole — an over-long prompt is trimmed from the start by Ollama, which
-    # is where the rules live.
-    script_example_top_k: int = 1
-    # Budget for the script prompt's reference script; divided across the
-    # examples for the test-case prompt.
-    example_max_chars: int = 12000
 
 
 @dataclass
@@ -48,7 +37,7 @@ class GenerationConfig:
     temperature: float = 0.2
     top_p: float = 0.9
     max_tokens: int = 2048
-    num_ctx: int = 24576
+    num_ctx: int = 8192
     request_timeout_seconds: int = 900
     keep_alive: str = "30m"
     num_threads: int = 0
@@ -89,9 +78,6 @@ _RETRIEVAL_KEYS = {
     "track_data_top_k": "track_data_top_k",
     "static_api_top_k": "static_api_top_k",
     "static_track_top_k": "static_track_top_k",
-    "script_kb_top_k": "script_kb_top_k",
-    "script_example_top_k": "script_example_top_k",
-    "example_max_chars": "example_max_chars",
 }
 _GENERATION_KEYS = {
     "ollama_host": "ollama_host",

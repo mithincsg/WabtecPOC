@@ -13,24 +13,13 @@ embedding_device: auto   # auto | cpu | cuda
 # Dense (BGE-M3 cosine) and keyword (BM25) run as two independent rankings
 # and are fused with reciprocal rank fusion. Weights are relative, not
 # required to sum to 1; set one to 0 to disable that arm.
-retrieval_top_k: 14          # chunks handed to the LLM after fusion
+retrieval_top_k: 8           # chunks handed to the LLM after fusion
 candidates_per_arm: 30       # depth each arm searches before fusion
 dense_weight: 1.0
 keyword_weight: 0.6
 rrf_k: 60                    # RRF damping; higher = flatter rank influence
 min_similarity: 0.0          # 0..1 dense cosine floor; 0 = keep everything
-# Cap on context text fed to the LLM. This used to be 7000, which for a
-# compound requirement naming several TBC/CFG parameters silently dropped
-# some of them: retrieval correctly ranked a parameter's definition inside
-# retrieval_top_k, but build_context() stops adding chunks once the running
-# total would exceed this budget, so a chunk ranked 4th of 8 never reached
-# the prompt even though nothing was wrong with retrieval. Verified against
-# "TBC290 seconds ... CFG22 is disabled" (work-zone target requirement):
-# CFG22's definition landed in the first 3 chunks and made it in; TBC290's
-# landed 4th and was cut, so the generated test cases had no TBC290 value to
-# draw on at all. Raise this (and retrieval_top_k) together with
-# llm_num_ctx for any requirement that names several distinct parameters.
-max_context_chars: 14000
+max_context_chars: 7000      # cap on context text fed to the LLM
 
 # [] = search every ingested document_type. Track data is always filtered
 # separately, by the requirement -> subdivision map in track_mapping.yaml.
@@ -45,53 +34,13 @@ static_api_top_k: 4          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-feature chunks per request (still
                               # filtered to the requirement's subdivisions)
 
-# Script generation runs its own knowledge-base pass, so the script prompt
-# carries the parameter-configuration and data-dictionary text the concrete
-# values must come from. Without it the reference scripts are the only place
-# in the prompt where a subdivision or TBC value appears, and the model
-# copies them. 0 disables the pass (values then become TODO variables).
-script_kb_top_k: 6
-
-# Examples (config/config.yaml: examples_dir) are template material, not a
-# source of facts, so they get a budget instead of the whole folder. The
-# test-case prompt sees the example requirements and their reference test
-# cases; the script prompt sees the `script_example_top_k` reference
-# script(s) whose subject matter best matches the requirement. Sending all
-# four full scripts to both prompts overran llm_num_ctx, and Ollama trims an
-# over-long prompt from the *start* — silently dropping the rules that
-# forbid copying values out of those very examples.
-# For the script prompt this is the budget for the reference script; for the
-# test-case prompt it is divided across the examples, so every example
-# contributes some phrasing rather than the first one crowding out the rest.
-script_example_top_k: 1
-example_max_chars: 12000
-
 # --- Generation (Ollama) -------------------------------------------------
 ollama_host: http://localhost:11434
 llm_model: qwen2.5:7b
 llm_temperature: 0.2
 llm_top_p: 0.9
-# Ceiling on one test-case-generation response — the main lever on CPU
-# generation time, since it bounds how many tokens the model is allowed to
-# keep producing. 1280 (the old default) is only enough for ~3-5 short test
-# cases: a compound requirement that genuinely enumerates ~11 distinct
-# behaviours ran out of output tokens partway through the JSON array, and
-# schema.py's truncation salvage correctly recovered only the cases the model
-# had *finished* — "asked for 11, got 3 back" rather than an error. 4096 fixed
-# that but pushed a large compound requirement's generation time past
-# llm_request_timeout_seconds on CPU. 2048 is the middle ground: enough for
-# roughly 8-10 test cases without truncating, faster than 4096. A requirement
-# that genuinely needs more than that will still be truncated (harmlessly —
-# the salvage logic keeps what finished) — raise this again if that turns out
-# to matter more than the extra wait.
-llm_max_tokens: 2048
-# Input + output must both fit here. The script prompt is the largest one:
-# system rules + approved test cases + one reference script (example_max_chars)
-# + API stubs + track records + parameter context (max_context_chars) +
-# script_max_tokens of output. At 8192 that overran, and Ollama trims an
-# over-long prompt from the start — losing the system rules first. Lower this
-# only together with example_max_chars / max_context_chars / the top_k values.
-llm_num_ctx: 24576
+llm_max_tokens: 1280
+llm_num_ctx: 8192
 llm_request_timeout_seconds: 900
 # Keeps the model resident between requests. A 7B model on CPU takes tens
 # of seconds to load; without this, every request pays that cost again.
