@@ -56,7 +56,7 @@ unchanged since it was last embedded. Both are checked against the
 `file_hash`/`pipeline_fingerprint` stamped on that file's chunks in ChromaDB,
 so there is no separate state file to fall out of sync. Fixing an extractor
 changes the fingerprint for every file, so the next run re-embeds the whole
-knowledge base once; runs after that go back to touching only what changed.
+knowledge base once; runs after that go back to touching only what changed
 
 ## Run it
 
