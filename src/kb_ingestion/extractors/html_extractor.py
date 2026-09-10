@@ -159,10 +159,9 @@ class HTMLTrackDataExtractor:
                         "section_path": f"{label} > {section_name}",
                         "table_title": section_name,
                         "table": index,
-                        # Filterable on its own, so the requirement ->
-                        # subdivision map in config/track_mapping.yaml can
-                        # restrict retrieval to the track a requirement is
-                        # actually tested on.
+                        # Kept as metadata so a citation can name the
+                        # subdivision a matched row came from, even though
+                        # retrieval itself searches every subdivision.
                         "subdivision": subdivision,
                         "subdivision_name": subdivision_name or None,
                     },

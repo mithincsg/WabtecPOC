@@ -11,7 +11,6 @@ from .cache import LruTtlCache
 from .concurrency import run_parallel
 from .config import RetrievalConfig
 from .keyword_index import KeywordHit, KeywordIndex
-from .track_mapping import TrackMapping, TrackSelection
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,7 @@ class RetrievedChunk:
 class RetrievalResult:
     chunks: list[RetrievedChunk]
     context: str
-    track_selection: TrackSelection
+    track_subdivisions: list[str]
     dense_hits: int
     keyword_hits: int
 
@@ -79,7 +78,6 @@ class _Pass:
 
     top_k: int
     doc_types: list[str] | None
-    subdivisions: list[str] | None = None
     exclude_doc_type: str | None = None
 
 
@@ -104,14 +102,12 @@ class HybridRetriever:
         embedder: EmbeddingModel,
         vector_store: VectorStore,
         config: RetrievalConfig,
-        track_mapping: TrackMapping,
         keyword_index: KeywordIndex | None = None,
         cache_entries: int = 32,
     ):
         self.embedder = embedder
         self.vector_store = vector_store
         self.config = config
-        self.track_mapping = track_mapping
         self.keyword_index = keyword_index or KeywordIndex(vector_store)
         # Retrieval is deterministic for a given query and filter set, so the
         # repeat passes inside one request (and a re-run of the same
@@ -124,23 +120,18 @@ class HybridRetriever:
         self,
         query_text: str,
         *,
-        requirement_id: str | None = None,
         doc_types: list[str] | None = None,
         top_k: int | None = None,
     ) -> RetrievalResult:
         if not query_text.strip():
-            return RetrievalResult([], "", TrackSelection((), False), 0, 0)
+            return RetrievalResult([], "", [], 0, 0)
 
         top_k = top_k if top_k is not None else self.config.top_k
-        selection = self.track_mapping.selection_for(requirement_id)
 
         cache_key = (
             query_text,
             top_k,
             tuple(doc_types) if doc_types else None,
-            tuple(selection.subdivisions),
-            selection.search_all,
-            selection.enabled,
         )
         cached = self._results.get(cache_key)
         if cached is not None:
@@ -155,24 +146,31 @@ class HybridRetriever:
         ]
         # Track data is retrieved as its own pass rather than being mixed into
         # the general one: its chunks are dense tables of track features that
-        # would otherwise crowd out prose context on score alone, and it needs
-        # the subdivision filter that only applies to it.
-        if selection.enabled and self.config.track_data_top_k > 0:
+        # would otherwise crowd out prose context on score alone. Every
+        # subdivision is searched — there is no per-requirement mapping — so
+        # whichever subdivision's rows actually match the query wins on
+        # relevance, same as any other retrieval.
+        if self.config.track_data_top_k > 0:
             passes.append(
                 _Pass(
                     top_k=self.config.track_data_top_k,
                     doc_types=[self.config.track_data_doc_type],
-                    subdivisions=(
-                        None if selection.search_all else list(selection.subdivisions)
-                    ),
                 )
             )
 
         chunks = [c for group in self._search_all(query_text, passes) for c in group]
+        track_subdivisions = sorted(
+            {
+                c.metadata["subdivision"]
+                for c in chunks
+                if c.metadata.get("document_type") == self.config.track_data_doc_type
+                and c.metadata.get("subdivision")
+            }
+        )
         result = RetrievalResult(
             chunks=chunks,
             context=self.build_context(chunks),
-            track_selection=selection,
+            track_subdivisions=track_subdivisions,
             dense_hits=sum(1 for c in chunks if "dense" in c.matched_by),
             keyword_hits=sum(1 for c in chunks if "keyword" in c.matched_by),
         )
@@ -223,12 +221,8 @@ class HybridRetriever:
         tasks: list = []
         for pass_ in passes:
             depth = max(pass_.top_k, self.config.candidates_per_arm)
-            where = self._build_where(
-                pass_.doc_types, pass_.subdivisions, pass_.exclude_doc_type
-            )
-            predicate = self._build_predicate(
-                pass_.doc_types, pass_.subdivisions, pass_.exclude_doc_type
-            )
+            where = self._build_where(pass_.doc_types, pass_.exclude_doc_type)
+            predicate = self._build_predicate(pass_.doc_types, pass_.exclude_doc_type)
             tasks.append(lambda d=depth, w=where: self._dense_search(query_text, d, w))
             tasks.append(
                 lambda d=depth, f=predicate: self._keyword_search(query_text, d, f)
@@ -332,40 +326,27 @@ class HybridRetriever:
     @staticmethod
     def _build_where(
         doc_types: list[str] | None,
-        subdivisions: list[str] | None,
         exclude_doc_type: str | None,
     ) -> dict[str, Any] | None:
-        clauses: list[dict[str, Any]] = []
         if doc_types:
-            clauses.append({"document_type": {"$in": list(doc_types)}})
-        elif exclude_doc_type:
-            clauses.append({"document_type": {"$ne": exclude_doc_type}})
-        if subdivisions:
-            clauses.append({"subdivision": {"$in": list(subdivisions)}})
-
-        if not clauses:
-            return None
-        return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+            return {"document_type": {"$in": list(doc_types)}}
+        if exclude_doc_type:
+            return {"document_type": {"$ne": exclude_doc_type}}
+        return None
 
     @staticmethod
     def _build_predicate(
         doc_types: list[str] | None,
-        subdivisions: list[str] | None,
         exclude_doc_type: str | None,
     ):
         allowed = set(doc_types) if doc_types else None
-        allowed_subdivisions = set(subdivisions) if subdivisions else None
 
         def predicate(metadata: dict[str, Any]) -> bool:
             document_type = metadata.get("document_type")
             if allowed is not None:
-                if document_type not in allowed:
-                    return False
-            elif exclude_doc_type and document_type == exclude_doc_type:
+                return document_type in allowed
+            if exclude_doc_type and document_type == exclude_doc_type:
                 return False
-            if allowed_subdivisions is not None:
-                if metadata.get("subdivision") not in allowed_subdivisions:
-                    return False
             return True
 
         return predicate

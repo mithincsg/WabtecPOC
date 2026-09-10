@@ -13,7 +13,7 @@ data/knowledge_base/  PDF · XLSX · TXT   ──(PyMuPDF, openpyxl)──┐
                                                                   │
 data/python_apis/  .py/.pyi   ──(ast)──┐                         │
 data/track_data/   .html      ──(html.parser)──┤   BM25-only, never embedded
-data/Examples/     req → ref test cases → ref script triples ──┘ (always sent in full)
+data/Examples/     req → ref test cases → ref script triples ──┘ (labelled, budgeted)
                                                                   │
 requirement ──→ requirement understanding ──→ hybrid retrieval ──┤
                                             (BGE-M3 dense + BM25, RRF)
@@ -32,7 +32,8 @@ either one giant stub file or thousands of near-identical per-subdivision
 rows, not prose an embedding model gains from, and both are full of exact
 identifiers (API names, block numbers) BM25 already handles better than
 dense search. `data/Examples/` is separate again: a handful of reference
-triples always sent to the LLM in full, never searched or ranked.
+triples sent to the LLM under a character budget, never searched or
+ranked.
 
 ## Setup
 
@@ -142,17 +143,39 @@ comment for the reasoning. `static_api_top_k`/`static_track_top_k` in
 `config/rag_config.yaml` control how many chunks of each are pulled per
 request.
 
-Track data is additionally mapped, not searched blindly:
-`config/track_mapping.yaml` says which subdivisions a requirement applies to
-(e.g. `L2R9479: ["08880"]`); `unmapped: exclude` (or `all`) controls the
-fallback. `8880`/`08880` both work, and `L2R9479_A` falls back to `L2R9479`.
+Track data is searched across every ingested subdivision for every
+requirement — there is no requirement → subdivision mapping. BM25 ranking
+over the query surfaces whichever subdivision's rows actually match; the
+matched chunk's `subdivision` metadata is still kept for citation and is
+reported back as `track_subdivisions` so a reviewer can see which
+subdivision(s) a generation actually drew values from.
 
 `data/Examples/` (config `examples_dir`) holds requirement → reference test
-cases → reference script triples for a handful of other requirements, always
-included in full for every generation request — not searched, not budgeted,
-small enough that ranking would add nothing. They exist to fix the *shape*
-of the output (datasheet phrasing, script layout, naming style), never to
-supply values: see "Examples are templates, never a source of values" below.
+cases → reference script triples for a handful of other requirements,
+included in every generation request — not searched, not ranked. They exist
+to fix the *shape* of the output (datasheet phrasing, script layout, naming
+style), never to supply values: see "Examples are templates, never a source
+of values" below.
+
+They are **split by call and budgeted**, and both halves of that matter.
+The datasheet prompt gets only the reference *test cases*
+(`examples_test_case_max_chars`); the script prompt gets only the reference
+*scripts* (`examples_script_max_chars`), each example taking an equal share
+truncated on a line boundary. Unbudgeted, the folder is ~157,000 characters
+(~39k tokens) against `llm_num_ctx`, and Ollama resolves an over-long prompt
+by dropping the *start* of it — the requirement, the retrieved context, and
+the rules forbidding value reuse. The visible symptom is every requirement
+producing the same unrelated test cases, copied from whichever example
+survived at the tail. `OllamaClient` now logs a loud warning whenever an
+assembled prompt is estimated to exceed the window, since Ollama itself
+reports nothing. The script call has its own wider window
+(`script_num_ctx`), because it also carries reference scripts and the API
+surface.
+
+The three context blocks in each prompt are wrapped in `=== LABEL ===`
+banners (`_labelled_blocks` in `generator.py`) naming what each may be used
+for — the system prompts' rules refer to them by name, and unlabelled, the
+most output-shaped text in the prompt (the examples) simply wins.
 
 ### Hybrid retrieval (`src/rag/retriever.py`, `keyword_index.py`)
 
@@ -263,7 +286,6 @@ config — no code change needed for any of these.
 | `config/config.yaml` | `sources` (embedded), `static_sources` (BM25-only), `examples_dir`, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
 | `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits, `max_test_cases` ceiling, confidence weights/threshold |
 | `config/prompts.yaml` | Every system and user prompt |
-| `config/track_mapping.yaml` | Requirement → subdivision mapping |
 | `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, `RAG_RETRIEVAL_WORKERS`, Ollama host override, frontend dev-server port/proxy target |
 
 Prefer adding new behavior-affecting knobs to `config/*.yaml`, and new
@@ -287,7 +309,7 @@ instances; `models.py` holds the request/response schemas.
 ### Layout
 
 ```
-config/                     config.yaml, rag_config.yaml, prompts.yaml, track_mapping.yaml
+config/                     config.yaml, rag_config.yaml, prompts.yaml
 data/knowledge_base/         PDF · XLSX · TXT (embedded)
 data/python_apis/            PY · PYI (static, BM25-only)
 data/track_data/              HTML (static, BM25-only)
@@ -301,7 +323,6 @@ src/kb_ingestion/
   pipeline.py                   orchestration
 src/rag/
   requirement_parser.py        requirement ID + functional area
-  track_mapping.py              requirement -> subdivision
   static_context.py             python_apis/track_data/Examples, BM25-only, never embedded
   keyword_index.py               BM25 arm over the embedded collection
   retriever.py                   hybrid search + RRF + context assembly
