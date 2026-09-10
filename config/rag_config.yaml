@@ -21,18 +21,29 @@ rrf_k: 60                    # RRF damping; higher = flatter rank influence
 min_similarity: 0.0          # 0..1 dense cosine floor; 0 = keep everything
 max_context_chars: 7000      # cap on context text fed to the LLM
 
-# [] = search every ingested document_type. Track data is always filtered
-# separately, by the requirement -> subdivision map in track_mapping.yaml.
+# [] = search every ingested document_type. Track data is always retrieved
+# as its own separate pass (see track_data_doc_type/track_data_top_k below).
 doc_types: []
 track_data_doc_type: track_data
-track_data_top_k: 4          # track-feature chunks added on top of top_k
+track_data_top_k: 4          # track-feature chunks added on top of top_k,
+                              # searched across every subdivision — there is
+                              # no per-requirement subdivision mapping
 
 # --- Static context (config/config.yaml: static_sources, examples_dir) ---
 # python_apis and track_data are BM25-only here (never embedded — see
 # config.yaml), so these are keyword-match counts, not fused-ranking ones.
 static_api_top_k: 4          # python_apis method/class chunks per request
-static_track_top_k: 4        # track-feature chunks per request (still
-                              # filtered to the requirement's subdivisions)
+static_track_top_k: 4        # track-feature chunks per request, searched
+                              # across every subdivision
+
+# data/Examples/ is included in every prompt as a shape template, so it has
+# to be budgeted: unbudgeted it is ~157,000 characters (~39k tokens) against
+# llm_num_ctx below, and Ollama resolves an over-long prompt by dropping its
+# *start* — the requirement text, the retrieved facts, and the rules that
+# forbid copying example values. Each example gets an equal share, truncated
+# on a line boundary; a partial example still shows phrasing and layout.
+examples_test_case_max_chars: 6000    # reference datasheets, datasheet prompt
+examples_script_max_chars: 12000      # reference scripts, script prompt
 
 # --- Generation (Ollama) -------------------------------------------------
 ollama_host: http://localhost:11434
@@ -40,8 +51,14 @@ llm_model: qwen2.5:7b
 llm_temperature: 0.2
 llm_top_p: 0.9
 llm_max_tokens: 1280
-llm_num_ctx: 8192
-llm_request_timeout_seconds: 900
+# Matches script_num_ctx deliberately. Ollama keeps one resident copy of the
+# model per context size, so two different windows make every switch between
+# the datasheet call and the script call unload and reload 7B of weights —
+# ~55s of dead time on this CPU, and a window in which a dropped connection
+# surfaces to the UI as a 503. One shared window costs a larger KV cache and
+# nothing else: prefill time scales with the prompt, not with the window.
+llm_num_ctx: 16384
+llm_request_timeout_seconds: null
 # Keeps the model resident between requests. A 7B model on CPU takes tens
 # of seconds to load; without this, every request pays that cost again.
 llm_keep_alive: 30m
@@ -58,6 +75,11 @@ max_test_cases: 20
 # --- Test-script generation ---------------------------------------------
 # The script call is a second, longer generation, so it gets its own budget.
 script_max_tokens: 1792
+# ...and its own context window setting: it carries reference scripts and the
+# API surface on top of the retrieved context. Keep this equal to llm_num_ctx
+# unless you have measured that the datasheet call needs a smaller one — see
+# the note there for why differing values are expensive.
+script_num_ctx: 16384
 
 # --- Confidence scoring --------------------------------------------------
 # Every generated test case gets three component scores, combined into one

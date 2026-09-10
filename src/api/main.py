@@ -149,7 +149,6 @@ def _health() -> HealthResponse:
         # Ollama reports tags as "qwen2.5:7b-instruct"; a config value
         # without the tag still refers to the same model.
         llm_available=any(m == configured or m.startswith(configured) for m in models),
-        mapped_requirements=services.track_mapping.known_requirement_ids,
     )
 
 

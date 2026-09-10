@@ -29,6 +29,13 @@ class RetrievalConfig:
     static_api_top_k: int = 4
     static_track_top_k: int = 4
 
+    # Character budgets for data/Examples/. The examples are the most
+    # output-shaped text in the prompt, and unbudgeted they are ~157k chars
+    # against an 8k-token window - Ollama then trims the prompt from the
+    # start and drops the requirement itself. See static_context._budgeted.
+    examples_test_case_max_chars: int = 6000
+    examples_script_max_chars: int = 12000
+
 
 @dataclass
 class GenerationConfig:
@@ -45,6 +52,9 @@ class GenerationConfig:
     # requirement needs, and this only bounds the response length.
     max_test_cases: int = 20
     script_max_tokens: int = 3072
+    # The script prompt carries reference scripts and the API surface on top
+    # of the retrieved context, so it gets its own (wider) window.
+    script_num_ctx: int = 16384
 
 
 @dataclass
@@ -78,6 +88,8 @@ _RETRIEVAL_KEYS = {
     "track_data_top_k": "track_data_top_k",
     "static_api_top_k": "static_api_top_k",
     "static_track_top_k": "static_track_top_k",
+    "examples_test_case_max_chars": "examples_test_case_max_chars",
+    "examples_script_max_chars": "examples_script_max_chars",
 }
 _GENERATION_KEYS = {
     "ollama_host": "ollama_host",
@@ -91,6 +103,7 @@ _GENERATION_KEYS = {
     "llm_num_threads": "num_threads",
     "max_test_cases": "max_test_cases",
     "script_max_tokens": "script_max_tokens",
+    "script_num_ctx": "script_num_ctx",
 }
 _CONFIDENCE_KEYS = {
     "confidence_weights": "weights",

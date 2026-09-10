@@ -56,7 +56,7 @@ unchanged since it was last embedded. Both are checked against the
 `file_hash`/`pipeline_fingerprint` stamped on that file's chunks in ChromaDB,
 so there is no separate state file to fall out of sync. Fixing an extractor
 changes the fingerprint for every file, so the next run re-embeds the whole
-knowledge base once; runs after that go back to touching only what changed.
+knowledge base once; runs after that go back to touching only what changed
 
 ## Run it
 
@@ -109,24 +109,17 @@ stamped with a `document_type` taken from its root; set
 overrides it, which is how `knowledge_base/reference_test_cases/` becomes its
 own filterable type without a code change.
 
-### Track data is mapped, not searched blindly
+### Track data is searched across every subdivision
 
-Each subdivision report lists thousands of track features. Searching all of
-them for every requirement drowns retrieval in track the requirement isn't
-tested on, so `config/track_mapping.yaml` says which subdivisions a
-requirement applies to:
-
-```yaml
-mappings:
-  L2R9479: ["08880"]
-  L2R7983: ["08101"]
-unmapped: exclude     # or `all`
-```
-
-`8880` and `08880` both work, and `L2R9479_A` falls back to `L2R9479`. A
-requirement with no row gets no track data at all (`exclude`). Track data is
-retrieved in its own filtered pass and appended after the general results, so
-it can never crowd out requirement prose on score alone.
+Each subdivision report lists thousands of track features. There is no
+requirement → subdivision mapping — every requirement searches every
+ingested subdivision, and BM25 ranking over the query surfaces whichever
+subdivision's rows actually match. Track data is retrieved in its own
+filtered pass (`document_type: track_data`) and appended after the general
+results, so it can never crowd out requirement prose on score alone. The
+matched chunk's `subdivision` metadata is kept for citation and reported
+back as `track_subdivisions`, so a reviewer can see which subdivision(s) a
+generation actually drew values from.
 
 ## How chunking preserves structure
 
@@ -281,7 +274,6 @@ edit.
 | `config/config.yaml` | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
 | `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
 | `config/prompts.yaml` | Every system and user prompt |
-| `config/track_mapping.yaml` | Requirement → subdivision |
 | `.env` | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target |
 
 ## Layout
@@ -300,7 +292,6 @@ src/kb_ingestion/
   pipeline.py               orchestration
 src/rag/
   requirement_parser.py     requirement ID + functional area
-  track_mapping.py          requirement → subdivision
   keyword_index.py          BM25 arm
   retriever.py              hybrid search + RRF + context assembly
   cache.py                  embedding / result caches

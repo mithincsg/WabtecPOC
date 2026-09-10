@@ -19,7 +19,6 @@ from rag.llm_client import OllamaClient
 from rag.prompts import PromptLibrary
 from rag.retriever import HybridRetriever
 from rag.static_context import StaticContextProvider
-from rag.track_mapping import TrackMapping
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,6 @@ class Services:
             self.settings.generation.ollama_host = os.environ["OLLAMA_HOST"]
 
         self.prompts = PromptLibrary(repo_root / "config" / "prompts.yaml")
-        self.track_mapping = TrackMapping(repo_root / "config" / "track_mapping.yaml")
         self.ingestion_config = PipelineConfig.load(repo_root / "config" / "config.yaml")
         self.llm_client = OllamaClient(self.settings.generation)
 
@@ -126,7 +124,6 @@ class Services:
                         embedder=self.embedder,
                         vector_store=self.vector_store,
                         config=self.settings.retrieval,
-                        track_mapping=self.track_mapping,
                         keyword_index=self.keyword_index,
                     )
         return self._retriever
@@ -136,9 +133,7 @@ class Services:
         if self._static_context is None:
             with self._lock:
                 if self._static_context is None:
-                    self._static_context = StaticContextProvider(
-                        self.ingestion_config, self.track_mapping
-                    )
+                    self._static_context = StaticContextProvider(self.ingestion_config)
         return self._static_context
 
     @property
@@ -155,6 +150,9 @@ class Services:
                         ),
                         static_context=self.static_context,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
+                        examples_max_chars=(
+                            self.settings.retrieval.examples_test_case_max_chars
+                        ),
                     )
         return self._test_case_generator
 
@@ -168,9 +166,13 @@ class Services:
                         llm_client=self.llm_client,
                         prompts=self.prompts,
                         max_tokens=self.settings.generation.script_max_tokens,
+                        num_ctx=self.settings.generation.script_num_ctx,
                         static_context=self.static_context,
                         static_api_top_k=self.settings.retrieval.static_api_top_k,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
+                        examples_max_chars=(
+                            self.settings.retrieval.examples_script_max_chars
+                        ),
                     )
         return self._script_generator
 

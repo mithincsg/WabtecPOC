@@ -150,4 +150,3 @@ class HealthResponse(BaseModel):
     embedding_model: str
     llm_model: str
     llm_available: bool
-    mapped_requirements: list[str] = Field(default_factory=list)
