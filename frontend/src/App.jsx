@@ -7,6 +7,7 @@ import {
   generateTestScript,
   uploadRequirement,
 } from "./api.js";
+import CoveragePlan from "./components/CoveragePlan.jsx";
 import DatasheetTable from "./components/DatasheetTable.jsx";
 import RetrievedContext from "./components/RetrievedContext.jsx";
 import ScriptPane from "./components/ScriptPane.jsx";
@@ -200,6 +201,10 @@ export default function App() {
                 )}
               </div>
               <DatasheetTable testCases={result.test_cases} />
+              <CoveragePlan
+                behaviours={result.behaviours}
+                rowCount={result.test_cases.length}
+              />
               <RetrievedContext
                 chunks={result.retrieved}
                 subdivisions={result.track_subdivisions}

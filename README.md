@@ -92,8 +92,11 @@ before seeing the result. The model is asked to enumerate the behaviours the
 requirement specifies and write one case for each: a requirement naming a
 single condition yields a single case, one naming six target types with a
 boundary each yields twelve. `max_test_cases` in `config/rag_config.yaml` is a
-ceiling that keeps a sprawling requirement inside the model's output budget,
-not a target.
+ceiling on that enumeration, not a target.
+
+Datasheet generation is itself **two calls** (see "Two-stage test-case
+generation" below): one that enumerates the behaviours, then one per batch of
+four that writes their rows.
 
 ## The three source folders
 
@@ -210,6 +213,52 @@ and a `# TODO:` rather than guess a plausible-looking number.
 Script generation is a **second** call, run against the rows the reviewer
 kept — including their edits — not against the model's first draft of them.
 
+## Two-stage test-case generation
+
+Enumerating what a requirement needs tested and writing those rows in house
+style are different jobs, and a 7B asked to do both in one response did
+neither well. It pattern-matched the reference examples and stopped where they
+stopped, and whatever it did write past `num_predict` was truncated mid-array
+and silently dropped — the coverage was not missing because the model could
+not think of the cases, it was missing because the response was cut off.
+
+So the datasheet is generated in two stages:
+
+1. **Plan** (`test_case_plan` in `config/prompts.yaml`). A small prompt with no
+   examples and no JSON. It emits one `N|type|behaviour` line per verifiable
+   behaviour, worked through an explicit six-point coverage checklist
+   (positive path per named condition, each "most restrictive of" comparison,
+   each threshold inside and outside, each suppression condition, each state
+   transition, each error path). ~200 output tokens, and it runs at
+   `plan_temperature` — hotter than the writing calls, because this step wants
+   breadth. The list is logged, and returned to the UI as `behaviours`, so
+   coverage can be judged before any prose is paid for.
+2. **Write** (`test_cases`). One call per `test_case_batch_size` behaviours,
+   each with a bounded output budget that always fits. Ollama's structured
+   output (`format`) constrains decoding to the datasheet schema, so the
+   response cannot be invalid JSON and stops cleanly at the closing brace.
+
+Two things follow from that split and are worth preserving:
+
+- **The model no longer emits what Python already knows.** `Folder`,
+  `Optimization_Technique`, `Retired?` and `Scorable` are filled in by
+  `schema.py`, and the house description layout (`Test Scenario:`, `-` bullets,
+  `Verify,`) is assembled there from the `scenario` / `conditions` / `verify`
+  the model returns. That is roughly a quarter of the old output budget
+  returned to actual test-case content, and it lets the wording examples
+  shrink to `examples_test_case_max_chars: 1500` — they only have to
+  demonstrate voice now, not layout.
+- **Prompt order is prefix-cacheable.** Ollama reuses the KV cache of an
+  identical prompt *prefix*, so the static blocks (wording template, retrieved
+  context) come first in the writing prompt and the per-batch instruction
+  last. Batches 2..N of a requirement cost decode time only. Reordering those
+  blocks would quietly undo it.
+
+A plan call that comes back unparseable is not fatal: the writing stage falls
+back to enumerating for itself in a single call, and says so in the log. A
+single writing batch that fails to parse is dropped and the other batches are
+kept.
+
 ## Prompts
 
 Every prompt is in `config/prompts.yaml`. Edits take effect on the next
@@ -261,18 +310,61 @@ around it is arranged so that it is the *only* thing you wait for:
 - **A truncated response is salvaged, not discarded.** If the model runs out
   of output tokens mid-array, the test cases it finished are recovered and the
   incomplete tail dropped, instead of failing a request that cost minutes.
+  With batched writing and Ollama's structured output this should no longer
+  fire; it stays as the safety net.
+- **The script call reuses the datasheet call's retrieval.** Parameter and
+  data-dictionary context is keyed on the requirement query, which has not
+  changed since the rows were generated, so the second call gets a cache hit
+  instead of another BGE-M3 encode plus two ranking passes. The API and
+  track-data passes still use the wider query (requirement + approved rows),
+  because which API calls matter genuinely does depend on the rows.
+- **Ollama is called with `stream: true`.** The generators still want the
+  whole string, but a multi-minute non-streaming POST is one long silence that
+  a proxy or client timeout can end for reasons no log explains — and the
+  final streamed chunk carries `prompt_eval_count`, `prompt_eval_duration`,
+  `eval_count` and `eval_duration`, which are logged. Those four are the only
+  way to tell "prefill is too big" from "we are decoding too many tokens",
+  and the two have opposite fixes.
+- **`llm_num_threads: auto` uses one thread per logical processor.** This is
+  measured, not assumed — see below.
 
-If generations are still too slow, in order of impact: lower `llm_max_tokens`,
-lower `retrieval_top_k` and `max_context_chars`, or change `llm_model` to
-`qwen2.5:3b-instruct` — that last one is a one-line change and needs no code
-edit.
+### Prefill is the wall
+
+Measured with `python scripts/bench_generation.py` on the 6-core/12-thread
+box this was built on (1,977-token prompt, qwen2.5:7b q4_K_M):
+
+| Setting | Prefill | Decode |
+|---|---|---|
+| `num_thread=4` | 14.8 tok/s | 7.5 tok/s |
+| `num_thread=6` (physical cores) | 15.9 tok/s | 6.1 tok/s |
+| Ollama's own default | 16.6 tok/s | 8.5 tok/s |
+| **`num_thread=12` (logical)** | **20.4 tok/s** | 7.6 tok/s |
+| qwen2.5:3b, `num_thread=6` | 37.6 tok/s | 14.2 tok/s |
+
+A prompt token costs about three times what an output token costs, and
+~50 seconds per thousand. So **the reliable way to make this faster is to
+send fewer prompt tokens**, and the surprising part is which blocks are
+big: track-data chunks tokenize at ~2.3 characters per token against
+prose's ~4, so four of them were 4,796 characters but 2,086 tokens — more
+than the knowledge base, requirement and system prompt combined. Hence
+`static_track_max_chars` / `static_api_max_chars`; `top_k` alone cannot
+bound a block whose chunk size depends on which subdivision it came from.
+
+Run the benchmark on your own hardware before changing thread counts — the
+one-thread-per-physical-core rule of thumb measured 28% *slower* here.
+
+If generations are still too slow, in order of impact: lower
+`static_track_max_chars` and `max_context_chars` (prompt tokens are the
+expensive ones), set `plan_model: qwen2.5:3b` so the enumeration call runs
+on a smaller model, lower `llm_max_tokens` (the per-batch budget), or change
+`llm_model` itself. Each is a config edit and needs no code change.
 
 ## Configuration
 
 | File | Controls |
 |---|---|
 | `config/config.yaml` | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
-| `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
+| `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, plan-call and batch settings, the `max_test_cases` ceiling, confidence weights and threshold |
 | `config/prompts.yaml` | Every system and user prompt |
 | `.env` | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target |
 
@@ -284,25 +376,19 @@ data/knowledge_base/        PDF · XLSX · TXT
 data/python_apis/           PYI · PY
 data/track_data/            HTML
 src/kb_ingestion/
-  extractors/               one parser per format
+  extractors.py             one parser per format
   chunking.py               normalisation, token budgets, chunk metadata
-  incremental.py            fingerprint behind the unchanged-file skip
-  embeddings.py             BGE-M3 wrapper
-  vector_store.py           ChromaDB wrapper
+  storage.py                BGE-M3 wrapper + ChromaDB wrapper
   pipeline.py               orchestration
 src/rag/
-  requirement_parser.py     requirement ID + functional area
-  keyword_index.py          BM25 arm
-  retriever.py              hybrid search + RRF + context assembly
-  cache.py                  embedding / result caches
-  concurrency.py            the retrieval thread pool
-  prompts.py                prompts.yaml loader
-  schema.py                 datasheet rows, model-output parsing
-  confidence.py             the three scores
+  config.py                 settings + prompts.yaml loader
+  utils.py                  caches + the retrieval thread pool
+  retrieval.py              BM25 arm, hybrid search + RRF, static context
+  schema.py                 datasheet rows, model-output parsing, confidence
   llm_client.py             Ollama behind a protocol
   generator.py              test-case and test-script generators
   exporters.py              .xlsx and .txt
-src/api/                    FastAPI app, models, service container
+src/api/                  main.py (routes, entry point), services.py (schemas + container)
 frontend/                   React + Vite
 scripts/run_ingestion.py    ingestion CLI
 tests/                      pytest suite

@@ -1,22 +1,54 @@
+"""Caches and the retrieval thread pool.
+
+Both exist for the same reason: on a CPU-only box the model call is the
+floor on latency, so nothing else may add to it.
+"""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
+# Retrieval is a handful of independent blocking calls - a ChromaDB HNSW
+# query, a BM25 pass, a sentence-transformers forward pass - and each
+# releases the GIL inside C or torch, so threads give real overlap.
+# Deliberately one flat pool used at a single level: nothing submitted to it
+# waits on another task submitted to it, so it cannot deadlock itself.
+_MAX_WORKERS = max(2, int(os.getenv("RAG_RETRIEVAL_WORKERS", "6")))
+_EXECUTOR = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="rag")
+
+
+def run_parallel(tasks: list[Callable[[], T]]) -> list[T]:
+    """Runs zero-argument callables concurrently, returning results in order.
+
+    A single task runs inline. An exception in any task propagates, as it
+    would if the calls had been made in sequence.
+    """
+    if not tasks:
+        return []
+    if len(tasks) == 1:
+        return [tasks[0]()]
+
+    futures = [_EXECUTOR.submit(task) for task in tasks]
+    return [future.result() for future in futures]
+
 
 class LruTtlCache:
-    """A small thread-safe LRU with an optional per-cache time-to-live.
+    """A small thread-safe LRU with an optional time-to-live.
 
-    Every cache in this project is read from FastAPI's worker threads, so the
-    lock is not optional. `ttl_seconds=None` means entries only ever leave by
-    being evicted as least-recently-used.
+    Every cache here is read from FastAPI's worker threads, so the lock is
+    not optional. `ttl_seconds=None` means entries leave only by eviction.
     """
 
     def __init__(self, max_entries: int = 256, ttl_seconds: float | None = None):
@@ -24,22 +56,17 @@ class LruTtlCache:
         self.ttl_seconds = ttl_seconds
         self._lock = threading.Lock()
         self._entries: "OrderedDict[Any, tuple[float, Any]]" = OrderedDict()
-        self.hits = 0
-        self.misses = 0
 
     def get(self, key: Any) -> Any | None:
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
-                self.misses += 1
                 return None
             stored_at, value = entry
             if self.ttl_seconds is not None and time.monotonic() - stored_at > self.ttl_seconds:
                 del self._entries[key]
-                self.misses += 1
                 return None
             self._entries.move_to_end(key)
-            self.hits += 1
             return value
 
     def put(self, key: Any, value: Any) -> None:
@@ -49,42 +76,17 @@ class LruTtlCache:
             while len(self._entries) > self.max_entries:
                 self._entries.popitem(last=False)
 
-    def get_or_call(self, key: Any, produce: Callable[[], Any]) -> Any:
-        """Reads through to `produce` on a miss.
-
-        Deliberately does *not* hold the lock across `produce`: the values
-        cached here take seconds to compute, and blocking every other reader
-        for that long would cost more than the occasional duplicated
-        computation when two requests miss on the same key at once.
-        """
-        cached = self.get(key)
-        if cached is not None:
-            return cached
-        value = produce()
-        self.put(key, value)
-        return value
-
-    def clear(self) -> None:
-        with self._lock:
-            self._entries.clear()
-
-    def __len__(self) -> int:
-        with self._lock:
-            return len(self._entries)
-
 
 class EmbeddingCache:
     """An EmbeddingModel that remembers vectors it has already computed.
 
-    BGE-M3 on CPU costs a few hundred milliseconds per text, and this pipeline
-    embeds the *same* text repeatedly: the requirement query is embedded once
-    per retrieval pass (general, track data, API docs, reference scripts), and
-    confidence scoring re-embeds the retrieved reference test cases on every
-    request even though they never change. Caching by exact text removes all
-    of that without changing a single vector.
+    BGE-M3 on CPU costs a few hundred milliseconds per text, and this
+    pipeline embeds the same text repeatedly: the requirement query once per
+    retrieval pass, and the retrieved reference test cases on every
+    confidence-scoring run even though they never change.
 
-    Misses within one call are batched into a single `encode`, so a partially
-    warm batch still pays for only one forward pass.
+    Misses within one call are batched into a single `encode`, so a
+    partially warm batch still pays for only one forward pass.
     """
 
     def __init__(self, embedder, max_entries: int = 4096):
@@ -114,24 +116,18 @@ class EmbeddingCache:
                 for index in pending[text]:
                     vectors[index] = vector
 
-        # Every slot is filled by construction; the cast keeps the type honest.
         return [v for v in vectors if v is not None]
 
-    @property
-    def wrapped(self):
-        return self._embedder
-
     def __getattr__(self, name):
-        # Keeps `model`, `model_name` and friends reachable, so the wrapper is
-        # a drop-in for the embedder it holds.
+        # Keeps `model`, `model_name` and friends reachable, so the wrapper
+        # is a drop-in for the embedder it holds.
         return getattr(self._embedder, name)
 
 
 def stable_key(*parts: Any) -> str:
     """A short, stable cache key for arbitrary JSON-able request parts.
-
-    Hashed rather than concatenated because one of the parts is the full
-    requirement text, which can be thousands of characters.
+    Hashed rather than concatenated because one part is the full requirement
+    text, which can be thousands of characters.
     """
     payload = json.dumps(parts, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

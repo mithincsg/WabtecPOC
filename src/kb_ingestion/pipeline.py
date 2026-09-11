@@ -1,5 +1,8 @@
+"""Discover -> extract -> normalize -> chunk -> embed -> upsert."""
+
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,21 +19,58 @@ from .chunking import (
     normalize_text,
 )
 from .config import PipelineConfig, SourceRoot
-from .embeddings import EmbeddingModel
 from .extractors import EXTRACTORS_BY_SUFFIX, ExtractedUnit, PDFExtractor
-from .incremental import compute_pipeline_fingerprint
-from .vector_store import VectorStore
+from .storage import EmbeddingModel, VectorStore
 
 logger = logging.getLogger(__name__)
 
+_PACKAGE_ROOT = Path(__file__).resolve().parent
 _PYTHON_SUFFIXES = {".py", ".pyi"}
 # Units whose internal layout carries meaning (indentation, a header row),
-# so they're split on line boundaries rather than sentence boundaries.
+# so they are split on line boundaries rather than sentence boundaries.
 _LINE_STRUCTURED_UNIT_TYPES = ("function", "class", "table")
 # Units where whitespace is meaningful, so prose normalization would corrupt
-# them. Tables are excluded deliberately: their cells are joined with " | ",
-# and collapsing the padding around that separator is desirable.
+# them. Tables are excluded: their cells are joined with " | " and
+# collapsing the padding around that separator is desirable.
 _LAYOUT_SENSITIVE_UNIT_TYPES = frozenset({"function", "class", "raw_python"})
+
+# Config fields that change what a chunk's text or metadata looks like.
+# embedding_device and embedding_batch_size are excluded deliberately: they
+# change how fast embedding runs, not what gets embedded.
+_CONTENT_AFFECTING_CONFIG_FIELDS = (
+    "chunk_max_tokens",
+    "chunk_overlap_tokens",
+    "xlsx_max_rows_per_chunk",
+    "pdf_heading_size_ratio",
+    "pdf_table_repeat_threshold",
+    "embedding_model",
+)
+
+
+def compute_pipeline_fingerprint(config: PipelineConfig) -> str:
+    """Hash of everything that can change the chunks produced for an
+    unchanged input file: every .py file in this package, plus the config
+    fields above. Stamped on each chunk, so a re-run skips a file only when
+    its bytes AND the code that processed it are unchanged - an extractor
+    fix invalidates the cache by itself, with no version number to bump.
+
+    Package-wide rather than per-module on purpose: a fix in one extractor
+    re-embeds everything, which costs one full pass but makes it impossible
+    for a stale chunk to survive a code change.
+    """
+    hasher = hashlib.sha256()
+
+    for path in sorted(_PACKAGE_ROOT.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        hasher.update(path.relative_to(_PACKAGE_ROOT).as_posix().encode("utf-8"))
+        hasher.update(path.read_bytes())
+
+    content_affecting = tuple(
+        getattr(config, name) for name in _CONTENT_AFFECTING_CONFIG_FIELDS
+    )
+    hasher.update(repr(content_affecting).encode("utf-8"))
+    return hasher.hexdigest()
 
 
 @dataclass
@@ -43,8 +83,8 @@ class PreparedChunk:
 class DiscoveredFile:
     path: Path
     document_type: str
-    # Path relative to the repo root, used as the chunk's stable identity
-    # across runs and as the label shown in the UI.
+    # Path relative to the repo root: the chunk's stable identity across
+    # runs, and the label shown in the UI.
     source_path: str
 
 
@@ -70,8 +110,7 @@ def discover_files(config: PipelineConfig) -> list[DiscoveredFile]:
         for path in sorted(source.path.rglob("*")):
             if not path.is_file() or path.suffix.lower() not in EXTRACTORS_BY_SUFFIX:
                 continue
-            if path.name.startswith("~$"):
-                # Office lock file for a workbook currently open in Excel.
+            if path.name.startswith("~$"):  # Excel lock file
                 continue
             found.append(
                 DiscoveredFile(
@@ -87,8 +126,7 @@ def _source_path_for(path: Path, source: SourceRoot, config: PipelineConfig) -> 
     try:
         return path.relative_to(config.base_dir).as_posix()
     except ValueError:
-        # Source root configured outside the repo (an absolute path) — fall
-        # back to a path relative to that root so it still reads sensibly.
+        # Source root configured outside the repo (an absolute path).
         return f"{source.document_type}/{path.relative_to(source.path).as_posix()}"
 
 
@@ -123,9 +161,8 @@ def _chunk_row_units(
     embedding_model: str,
 ) -> list[PreparedChunk]:
     """Spreadsheet rows, grouped by sheet so two sheets' rows never land in
-    one chunk. With xlsx_max_rows_per_chunk at its default of 1 this is one
-    chunk per test case, which is what makes a retrieved reference test case
-    a clean, whole example for the LLM to imitate.
+    one chunk. At xlsx_max_rows_per_chunk=1 this is one chunk per test case,
+    which is what makes a retrieved reference case a clean whole example.
     """
     prepared: list[PreparedChunk] = []
     rows_by_sheet: dict[str, list[ExtractedUnit]] = {}
@@ -244,8 +281,7 @@ class IngestionPipeline:
     ) -> tuple[str, list[PreparedChunk]]:
         """Extract, normalize, chunk and build metadata for one file. Touches
         neither the embedder nor the vector store, so it works standalone for
-        --dry-run and for tests. Pass a precomputed hash to avoid re-reading
-        a file the caller already hashed.
+        --dry-run and for the static BM25 index.
         """
         file_hash = file_hash if file_hash is not None else file_sha256(file.path)
         module_name = (
@@ -306,10 +342,11 @@ class IngestionPipeline:
                 stats.files_processed += 1
                 continue
 
-            # Drop this file's previous chunks before inserting the new ones,
-            # so a changed file with different chunk boundaries leaves nothing
-            # stale behind.
-            stats.chunks_deleted += self.vector_store.delete_by_source_path(file.source_path)
+            # Drop this file's previous chunks first, so a changed file with
+            # different chunk boundaries leaves nothing stale behind.
+            stats.chunks_deleted += self.vector_store.delete_by_source_path(
+                file.source_path
+            )
 
             if chunks:
                 texts = [c.text for c in chunks]

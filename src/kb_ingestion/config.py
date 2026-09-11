@@ -1,3 +1,5 @@
+"""config/config.yaml -> PipelineConfig."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,10 +11,7 @@ import yaml
 @dataclass
 class SourceRoot:
     """One folder of source documents and the document_type its chunks get.
-
-    Separate roots exist because each holds a different kind of thing parsed
-    a different way — knowledge-base documents, Python API stubs, track-data
-    HTML reports. Which is which comes from config/config.yaml, never from a
+    Which folder is which comes from config/config.yaml, never from a
     hardcoded folder name in the code.
     """
 
@@ -34,10 +33,10 @@ class SourceRoot:
 @dataclass
 class PipelineConfig:
     sources: list[SourceRoot] = field(default_factory=list)
-    # Parsed the same way as `sources`, but never embedded/upserted — read
-    # straight from disk into a BM25-only index by src/rag/static_context.py.
+    # Parsed like `sources`, but never embedded - read straight from disk
+    # into a BM25-only index by src/rag/retrieval.py.
     static_sources: list[SourceRoot] = field(default_factory=list)
-    # Few-shot example folder, always included in full rather than searched.
+    # Few-shot example folder: sent to the LLM under a budget, never searched.
     examples_dir: Path | None = None
 
     chunk_max_tokens: int = 512
@@ -54,17 +53,16 @@ class PipelineConfig:
     chroma_persist_dir: Path = Path("chroma_db")
     chroma_collection: str = "kb_collection"
 
-    # Directory the repo root resolves to; relative paths above are resolved
-    # against it so the pipeline works from any working directory.
+    # Repo root; relative paths above resolve against it, so the pipeline
+    # works from any working directory.
     base_dir: Path = Path(".")
 
     @classmethod
     def load(cls, config_path: str | Path) -> "PipelineConfig":
         config_path = Path(config_path)
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        base_dir = config_path.resolve().parent.parent
 
-        cfg = cls(base_dir=base_dir)
+        cfg = cls(base_dir=config_path.resolve().parent.parent)
         raw_sources = raw.pop("sources", None)
         raw_static_sources = raw.pop("static_sources", None)
         raw_examples_dir = raw.pop("examples_dir", None)
@@ -77,7 +75,9 @@ class PipelineConfig:
         if not raw_sources:
             raise ValueError(f"{config_path} defines no `sources:` to ingest from.")
         cfg.sources = [cfg._build_source(entry) for entry in raw_sources]
-        cfg.static_sources = [cfg._build_source(entry) for entry in raw_static_sources or []]
+        cfg.static_sources = [
+            cfg._build_source(entry) for entry in raw_static_sources or []
+        ]
         cfg.examples_dir = cfg.resolve(raw_examples_dir) if raw_examples_dir else None
         cfg.chroma_persist_dir = cfg.resolve(cfg.chroma_persist_dir)
         return cfg

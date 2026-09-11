@@ -1,3 +1,5 @@
+"""Request/response schemas, and the shared service container behind them."""
+
 from __future__ import annotations
 
 import logging
@@ -6,42 +8,188 @@ import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from kb_ingestion.config import PipelineConfig
-from kb_ingestion.embeddings import LocalBGEM3Embedder
-from kb_ingestion.vector_store import VectorStore
-from rag.cache import EmbeddingCache, LruTtlCache
-from rag.confidence import ConfidenceScorer
-from rag.config import RAGSettings
+from kb_ingestion.storage import LocalBGEM3Embedder, VectorStore
+from rag.config import PromptLibrary, RAGSettings
 from rag.generator import TestCaseGenerator, TestScriptGenerator
-from rag.keyword_index import KeywordIndex
 from rag.llm_client import OllamaClient
-from rag.prompts import PromptLibrary
-from rag.retriever import HybridRetriever
-from rag.static_context import StaticContextProvider
+from rag.retrieval import HybridRetriever, KeywordIndex, StaticContextProvider
+from rag.schema import ConfidenceBreakdown, ConfidenceScorer, TestCase
+from rag.utils import EmbeddingCache, LruTtlCache
 
 logger = logging.getLogger(__name__)
 
-
-# Generated rows are held for this long, so re-submitting the same
-# requirement (the reflex after a browser refresh, or while comparing two
-# wordings) answers instantly instead of spending minutes reproducing a
-# near-identical answer at temperature 0.2. Short enough that a knowledge-base
-# re-ingestion is reflected within the hour without a restart.
+# Generated rows are held this long, so re-submitting the same requirement
+# (the reflex after a browser refresh) answers instantly instead of spending
+# minutes reproducing a near-identical answer at temperature 0.15. Short
+# enough that a re-ingestion is reflected within the hour without a restart.
 _RESULT_CACHE_TTL_SECONDS = 60 * 60
 _RESULT_CACHE_ENTRIES = 32
+
+
+# --- Schemas ---------------------------------------------------------------
+
+
+class ConfidenceOut(BaseModel):
+    overall: float = 0.0
+    retrieval: float = 0.0
+    grounding: float = 0.0
+    similarity_to_existing: float = 0.0
+    closest_existing_id: str | None = None
+    closest_existing_source: str | None = None
+    needs_review: bool = False
+
+    @classmethod
+    def from_domain(cls, confidence: ConfidenceBreakdown) -> "ConfidenceOut":
+        return cls(**confidence.__dict__)
+
+
+class TestCaseOut(BaseModel):
+    """One datasheet row. Field names match the schema's attribute names, so
+    the React table and the Excel export are driven by the same keys.
+    """
+
+    s_no: int
+    requirement: str
+    description: str
+    folder: str = ""
+    optimization_technique: str = "Default"
+    test_type: str = "Positive"
+    test_technique: str = "Equivalence Partitioning"
+    retired: str = "False"
+    scorable: str = "Yes"
+    comments: str = ""
+    confidence: ConfidenceOut = Field(default_factory=ConfidenceOut)
+
+    @classmethod
+    def from_domain(cls, test_case: TestCase) -> "TestCaseOut":
+        data = {
+            attr: getattr(test_case, attr)
+            for attr in (
+                "s_no",
+                "requirement",
+                "description",
+                "folder",
+                "optimization_technique",
+                "test_type",
+                "test_technique",
+                "retired",
+                "scorable",
+                "comments",
+            )
+        }
+        return cls(**data, confidence=ConfidenceOut.from_domain(test_case.confidence))
+
+    def to_domain(self) -> TestCase:
+        return TestCase(
+            s_no=self.s_no,
+            requirement=self.requirement,
+            description=self.description,
+            folder=self.folder,
+            optimization_technique=self.optimization_technique,
+            test_type=self.test_type,
+            test_technique=self.test_technique,
+            retired=self.retired,
+            scorable=self.scorable,
+            comments=self.comments,
+            confidence=ConfidenceBreakdown(**self.confidence.model_dump()),
+        )
+
+
+class RetrievedChunkOut(BaseModel):
+    chunk_id: str
+    source: str
+    document_type: str = ""
+    similarity: float | None = None
+    bm25_score: float | None = None
+    # Which arm(s) found this chunk - shown in the UI, so it is visible when
+    # keyword search is what surfaced a parameter table dense search ranked
+    # too low.
+    matched_by: list[str] = Field(default_factory=list)
+    excerpt: str = ""
+
+
+class GenerateTestCasesRequest(BaseModel):
+    """There is deliberately no test-case count here. How many cases a
+    requirement needs is a property of the requirement - one per verifiable
+    behaviour - not something a user should guess before seeing the result.
+    """
+
+    requirement_text: str = Field(min_length=1)
+    top_k: int | None = Field(default=None, ge=1, le=50)
+    doc_types: list[str] | None = None
+    # Set by a caller that wants the model re-run rather than the previous
+    # identical result replayed. Not exposed in the UI; it exists so a
+    # cached answer is never the only answer available.
+    refresh: bool = False
+
+
+class GenerateTestCasesResponse(BaseModel):
+    requirement_id: str | None
+    functional_area: str | None
+    test_cases: list[TestCaseOut]
+    retrieved: list[RetrievedChunkOut]
+    track_subdivisions: list[str] = Field(default_factory=list)
+    # Coverage is judged against behaviours, not row count, so a reviewer
+    # needs the list the rows were written from.
+    behaviours: list[str] = Field(default_factory=list)
+    mean_confidence: float = 0.0
+    review_threshold: float = 0.0
+    elapsed_seconds: float = 0.0
+    # True when these rows were replayed from an earlier identical request.
+    cached: bool = False
+
+
+class GenerateScriptRequest(BaseModel):
+    requirement_text: str = Field(min_length=1)
+    # The reviewed rows, not the ones first generated.
+    test_cases: list[TestCaseOut] = Field(min_length=1)
+
+
+class GenerateScriptResponse(BaseModel):
+    requirement_id: str | None
+    script: str
+    elapsed_seconds: float = 0.0
+
+
+class ExportTestCasesRequest(BaseModel):
+    test_cases: list[TestCaseOut] = Field(min_length=1)
+    requirement_id: str | None = None
+    include_confidence: bool = True
+
+
+class ExportScriptRequest(BaseModel):
+    script: str = Field(min_length=1)
+    requirement_id: str | None = None
+
+
+class RequirementUploadResponse(BaseModel):
+    filename: str
+    requirement_text: str
+    requirement_id: str | None = None
+
+
+class HealthResponse(BaseModel):
+    knowledge_base_chunks: int
+    embedding_model: str
+    llm_model: str
+    llm_available: bool
+
+
+# --- Service container -----------------------------------------------------
 
 
 class Services:
     """Everything the API needs, built once and shared.
 
-    The heavy pieces — the BGE-M3 weights and the BM25 index — are built on
+    The heavy pieces - the BGE-M3 weights and the BM25 index - are built on
     first use rather than at import, so the server starts immediately and
-    `/api/health` answers even if the model hasn't loaded yet. Every lazy
-    property is guarded by the same lock: two concurrent first requests would
-    otherwise each load the embedding model, doubling peak memory on a
-    machine that may not have the headroom, and each build their own BM25
-    index over the whole corpus.
+    /api/health answers even if the model hasn't loaded. Every lazy property
+    is guarded by the same re-entrant lock: they are layered (the retriever
+    needs the embedder), and two concurrent first requests would otherwise
+    each load the embedding model and build their own BM25 index.
     """
 
     def __init__(self, repo_root: Path):
@@ -51,8 +199,7 @@ class Services:
         self.settings = RAGSettings.load(repo_root / "config" / "rag_config.yaml")
 
         # config/rag_config.yaml is the checked-in default; OLLAMA_HOST in
-        # .env is the per-machine override (e.g. Ollama running on another
-        # box), so it takes precedence when set.
+        # .env is the per-machine override, so it takes precedence.
         if os.getenv("OLLAMA_HOST"):
             self.settings.generation.ollama_host = os.environ["OLLAMA_HOST"]
 
@@ -60,9 +207,6 @@ class Services:
         self.ingestion_config = PipelineConfig.load(repo_root / "config" / "config.yaml")
         self.llm_client = OllamaClient(self.settings.generation)
 
-        # Re-entrant: the lazy properties below are layered (retriever needs
-        # the embedder, which needs the lock), and a plain Lock would
-        # deadlock the first request that walks the whole chain.
         self._lock = threading.RLock()
         self._embedder = None
         self._vector_store: VectorStore | None = None
@@ -76,8 +220,6 @@ class Services:
             max_entries=_RESULT_CACHE_ENTRIES, ttl_seconds=_RESULT_CACHE_TTL_SECONDS
         )
 
-    # --- lazily built ------------------------------------------------------
-
     @property
     def embedder(self):
         if self._embedder is None:
@@ -86,8 +228,8 @@ class Services:
                     retrieval = self.settings.retrieval
                     # Wrapped in a cache because the same texts are embedded
                     # over and over: the requirement query once per retrieval
-                    # pass, and the retrieved reference test cases on every
-                    # confidence-scoring run even though they never change.
+                    # pass, and the retrieved reference cases on every
+                    # confidence-scoring run.
                     self._embedder = EmbeddingCache(
                         LocalBGEM3Embedder(
                             model_name=retrieval.embedding_model,
@@ -141,18 +283,23 @@ class Services:
         if self._test_case_generator is None:
             with self._lock:
                 if self._test_case_generator is None:
+                    retrieval = self.settings.retrieval
+                    generation = self.settings.generation
                     self._test_case_generator = TestCaseGenerator(
                         retriever=self.retriever,
                         llm_client=self.llm_client,
                         prompts=self.prompts,
-                        scorer=ConfidenceScorer(
-                            self.embedder, self.settings.confidence
-                        ),
+                        scorer=ConfidenceScorer(self.embedder, self.settings.confidence),
                         static_context=self.static_context,
-                        static_track_top_k=self.settings.retrieval.static_track_top_k,
-                        examples_max_chars=(
-                            self.settings.retrieval.examples_test_case_max_chars
-                        ),
+                        static_track_top_k=retrieval.static_track_top_k,
+                        examples_max_chars=retrieval.examples_test_case_max_chars,
+                        static_track_max_chars=retrieval.static_track_max_chars,
+                        batch_size=generation.test_case_batch_size,
+                        plan_model=generation.plan_model,
+                        plan_max_tokens=generation.plan_max_tokens,
+                        plan_temperature=generation.plan_temperature,
+                        plan_context_max_chars=retrieval.plan_context_max_chars,
+                        parallelism=generation.writing_parallelism,
                     )
         return self._test_case_generator
 
@@ -161,40 +308,36 @@ class Services:
         if self._script_generator is None:
             with self._lock:
                 if self._script_generator is None:
+                    retrieval = self.settings.retrieval
+                    generation = self.settings.generation
                     self._script_generator = TestScriptGenerator(
                         retriever=self.retriever,
                         llm_client=self.llm_client,
                         prompts=self.prompts,
-                        max_tokens=self.settings.generation.script_max_tokens,
-                        num_ctx=self.settings.generation.script_num_ctx,
+                        max_tokens=generation.script_max_tokens,
+                        num_ctx=generation.script_num_ctx,
                         static_context=self.static_context,
-                        static_api_top_k=self.settings.retrieval.static_api_top_k,
-                        static_track_top_k=self.settings.retrieval.static_track_top_k,
-                        examples_max_chars=(
-                            self.settings.retrieval.examples_script_max_chars
-                        ),
+                        static_api_top_k=retrieval.static_api_top_k,
+                        static_track_top_k=retrieval.static_track_top_k,
+                        examples_max_chars=retrieval.examples_script_max_chars,
+                        static_api_max_chars=retrieval.static_api_max_chars,
+                        static_track_max_chars=retrieval.static_track_max_chars,
                     )
         return self._script_generator
 
-    # --- cache keys ---------------------------------------------------------
-
     def prompt_revision(self) -> float:
-        """The prompts file's modification time, so a cached generation is
-        never replayed after someone edited the prompt that produced it.
-        Prompt wording is what gets iterated on, and a stale cached answer
-        would make an edit look like it had no effect.
+        """The prompts file's mtime, so a cached generation is never replayed
+        after someone edited the prompt that produced it - otherwise an edit
+        looks like it had no effect.
         """
         try:
             return self.prompts.path.stat().st_mtime
         except OSError:
             return 0.0
 
-    # --- startup -----------------------------------------------------------
-
     def warm_up(self) -> None:
-        """Pays the two startup costs — loading the embedding model and
-        loading the LLM weights into Ollama — while the user is still reading
-        the page, rather than on their first request. Failures are logged and
+        """Pays the startup costs - the embedding model and the LLM weights -
+        while the user is still reading the page. Failures are logged and
         swallowed: a cold start is slow, not broken.
         """
         try:
@@ -204,7 +347,7 @@ class Services:
             logger.exception("Could not preload the embedding model")
 
         try:
-            self.static_context  # noqa: B018 - property access builds the BM25 corpus
+            self.static_context  # noqa: B018 - property access builds the corpus
             logger.info("Static context (python_apis, track_data, Examples) ready")
         except Exception:  # noqa: BLE001
             logger.exception("Could not preload static context")

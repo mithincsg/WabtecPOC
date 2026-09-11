@@ -1,3 +1,9 @@
+"""Normalization, token-budget packing, and chunk metadata.
+
+Structure decides the chunk boundaries (see extractors.py); the token budget
+here only applies when a single structural unit exceeds it.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -15,11 +21,6 @@ logger = logging.getLogger(__name__)
 
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-
-
-# --- Normalization -----------------------------------------------------
-# Runs right after extraction, before chunking.
-
 _CONTROL_CHARS_RE = re.compile(
     "[" + "".join(chr(c) for c in range(0, 32) if c not in (9, 10)) + "]"
 )
@@ -29,15 +30,18 @@ _TRAILING_SPACE_RE = re.compile(r"[ \t]+\n")
 _HYPHEN_LINEBREAK_RE = re.compile(r"(\w)-\n(\w)")
 
 
+# --- Normalization ---------------------------------------------------------
+
+
 def normalize_text(text: str) -> str:
-    """Unicode-normalize and clean whitespace/artifacts, for prose. Idempotent.
+    """Unicode-normalize and clean whitespace for prose. Idempotent.
 
     Collapses runs of spaces, which is right for text reflowed out of a PDF
-    and wrong for source code — see normalize_code.
+    and wrong for source code - see normalize_code.
     """
     text = unicodedata.normalize("NFKC", text)
     text = _CONTROL_CHARS_RE.sub("", text)
-    text = _HYPHEN_LINEBREAK_RE.sub(r"\1\2", text)  # de-hyphenate line-wrapped words
+    text = _HYPHEN_LINEBREAK_RE.sub(r"\1\2", text)  # de-hyphenate wrapped words
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _TRAILING_SPACE_RE.sub("\n", text)
     text = _MULTI_SPACE_RE.sub(" ", text)
@@ -46,15 +50,9 @@ def normalize_text(text: str) -> str:
 
 
 def normalize_code(text: str) -> str:
-    """Normalization for source code: same cleanup as normalize_text minus
-    anything that alters layout.
-
-    Indentation *is* syntax in Python, and alignment carries meaning in a
-    test script's branch structure. Running prose normalization over a
-    script collapses every indent to a single space, so a model asked to
-    imitate the retrieved example has no correct example to imitate.
-    Line-wrap de-hyphenation is dropped too: it would silently join
-    `some-\nname` in a string literal. Idempotent.
+    """Normalization for source code: the same cleanup minus anything that
+    alters layout. Indentation is syntax in Python, and a model asked to
+    imitate a retrieved script needs the layout intact. Idempotent.
     """
     text = unicodedata.normalize("NFKC", text)
     text = _CONTROL_CHARS_RE.sub("", text)
@@ -64,15 +62,13 @@ def normalize_code(text: str) -> str:
     return text.strip("\n")
 
 
-# --- Tokenization --------------------------------------------------------
+# --- Tokenization ----------------------------------------------------------
 
 
 class TokenCounter:
-    """Wraps the bge-m3 tokenizer for accurate token counts during chunk
-    packing (bge-m3 supports up to 8192 tokens, so naive char-count budgets
-    would under/over-pack badly). Falls back to a whitespace-word
-    approximation if the tokenizer can't be loaded (e.g. no network), so the
-    pipeline degrades gracefully instead of hard-failing.
+    """The bge-m3 tokenizer, for accurate counts during chunk packing. Falls
+    back to a whitespace-word approximation if it cannot be loaded (e.g. no
+    network), so the pipeline degrades instead of hard-failing.
     """
 
     def __init__(self, model_name: str = "BAAI/bge-m3"):
@@ -106,7 +102,7 @@ class TokenCounter:
         return len(tokenizer.encode(text, add_special_tokens=False))
 
 
-# --- Chunking (token-budget packing within pre-scoped structural units) ---
+# --- Chunking --------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -125,9 +121,8 @@ def _split_into_sentences(paragraph: str) -> list[str]:
 
 
 def _hard_split_by_tokens(text: str, counter: TokenCounter, max_tokens: int) -> list[str]:
-    """Last-resort split for a single piece that alone exceeds max_tokens
-    (e.g. a very long sentence or an oversized table row): greedily pack
-    words until the token budget is hit.
+    """Last resort for a single piece that alone exceeds max_tokens: greedily
+    pack words until the budget is hit.
     """
     words = text.split()
     if not words:
@@ -200,9 +195,8 @@ def _pack_pieces(
 def chunk_text(
     text: str, counter: TokenCounter, max_tokens: int, overlap_tokens: int
 ) -> list[str]:
-    """Paragraph -> sentence recursive splitting, packed into token windows
-    with overlap. Used for PDF section text, module docstrings, and
-    unparsable ("raw") Python files.
+    """Paragraph -> sentence splitting, packed into token windows with
+    overlap. Used for PDF section text, module docstrings and raw Python.
     """
     paragraphs = _split_into_paragraphs(text)
     if not paragraphs:
@@ -219,11 +213,9 @@ def chunk_text(
 
 
 def chunk_code(text: str, counter: TokenCounter, max_tokens: int) -> list[str]:
-    """Keep a function/class/table whole when it fits the token budget (a
-    function/method is the natural retrieval unit for reusable APIs, a table
-    should keep its header with its rows). Oversized content is split on
-    line boundaries, with the first line (signature or table header)
-    repeated on every sub-chunk so each stays self-describing.
+    """Keeps a function/class/table whole when it fits the budget. Oversized
+    content is split on line boundaries with the first line (signature or
+    table header) repeated, so each sub-chunk stays self-describing.
     """
     if counter.count(text) <= max_tokens:
         return [text] if text.strip() else []
@@ -233,11 +225,9 @@ def chunk_code(text: str, counter: TokenCounter, max_tokens: int) -> list[str]:
         return []
 
     header = lines[0]
-    body_lines = lines[1:]
-
     chunks: list[str] = []
     current: list[str] = []
-    for line in body_lines:
+    for line in lines[1:]:
         candidate = "\n".join([header, *current, line])
         if current and counter.count(candidate) > max_tokens:
             chunks.append("\n".join([header, *current]))
@@ -247,10 +237,7 @@ def chunk_code(text: str, counter: TokenCounter, max_tokens: int) -> list[str]:
 
     if current:
         chunks.append("\n".join([header, *current]))
-    if not chunks:
-        chunks = [header]
-
-    return chunks
+    return chunks or [header]
 
 
 def chunk_rows(
@@ -259,9 +246,9 @@ def chunk_rows(
     max_tokens: int,
     max_rows_per_chunk: int,
 ) -> list[RowChunk]:
-    """Pack contiguous xlsx rows (already scoped to a single sheet by the
-    caller) into groups bounded by both a token budget and a row-count cap.
-    Rows are discrete records, so - unlike prose - no overlap is applied.
+    """Packs contiguous xlsx rows (already scoped to one sheet by the caller)
+    into groups bounded by a token budget and a row-count cap. Rows are
+    discrete records, so - unlike prose - no overlap is applied.
     """
     chunks: list[RowChunk] = []
     current_texts: list[str] = []
@@ -304,7 +291,6 @@ def chunk_rows(
 
 
 # --- Metadata --------------------------------------------------------------
-# Built alongside each chunk as units are packed above.
 
 
 def file_sha256(file_path: Path) -> str:
@@ -316,8 +302,8 @@ def file_sha256(file_path: Path) -> str:
 
 
 def make_chunk_id(source_path: str, locator_key: str, chunk_index: int, text: str) -> str:
-    """Deterministic chunk id: same source/locator/index/content -> same id,
-    so re-ingesting an unchanged file re-upserts the same id (idempotent).
+    """Deterministic id: the same source/locator/index/content gives the same
+    id, so re-ingesting an unchanged file re-upserts rather than duplicates.
     """
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
     raw = f"{source_path}::{locator_key}::{chunk_index}::{content_hash}"
@@ -336,11 +322,9 @@ class ChunkMetadata:
     file_hash: str
     embedding_model: str
     ingested_at: str
-    # Fingerprint of the ingestion package's own code + the config fields
-    # that affect chunk content, stamped on after chunking (see
-    # kb_ingestion.incremental). Lets a re-run skip a file whose bytes are
-    # unchanged AND whose extraction/chunking logic hasn't changed since it
-    # was last embedded, while still reprocessing it if either has.
+    # Fingerprint of the ingestion code plus the config fields that affect
+    # chunk content (see pipeline.compute_pipeline_fingerprint), stamped on
+    # after chunking. Half of the unchanged-file skip.
     pipeline_fingerprint: str | None = None
     section_path: str | None = None
     page: int | None = None
@@ -354,18 +338,15 @@ class ChunkMetadata:
     method_name: str | None = None
     table_index: int | None = None
     table_title: str | None = None
-    # Track-data only: which subdivision report this chunk came from, so
-    # retrieval can be restricted to the track a requirement is tested on.
+    # Track data only: which subdivision report this chunk came from.
     subdivision: str | None = None
 
     def to_chroma_dict(self) -> dict[str, Any]:
-        """Chroma metadata values must be str/int/float/bool - drop Nones
-        and the id (stored separately as the Chroma document id).
+        """Chroma metadata must be str/int/float/bool - drop Nones and the id
+        (stored separately as the Chroma document id).
         """
         return {
-            k: v
-            for k, v in self.__dict__.items()
-            if v is not None and k != "chunk_id"
+            k: v for k, v in self.__dict__.items() if v is not None and k != "chunk_id"
         }
 
 
@@ -387,7 +368,6 @@ def build_metadata(
     locator = unit.locator
     extra = unit.extra
     locator_key = "|".join(f"{k}={v}" for k, v in sorted(locator.items()))
-    chunk_id = make_chunk_id(source_path, locator_key, chunk_index, text)
 
     class_name: str | None = None
     method_name: str | None = None
@@ -398,7 +378,7 @@ def build_metadata(
         class_name = locator.get("class_name")
 
     return ChunkMetadata(
-        chunk_id=chunk_id,
+        chunk_id=make_chunk_id(source_path, locator_key, chunk_index, text),
         source_path=source_path,
         source_file=source_file,
         document_type=document_type,

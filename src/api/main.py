@@ -1,3 +1,5 @@
+"""The FastAPI app: health, upload, generation and export endpoints."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +23,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 
-from api.models import (  # noqa: E402
+from api.services import (  # noqa: E402
     ExportScriptRequest,
     ExportTestCasesRequest,
     GenerateScriptRequest,
@@ -31,15 +33,15 @@ from api.models import (  # noqa: E402
     HealthResponse,
     RequirementUploadResponse,
     RetrievedChunkOut,
+    Services,
     TestCaseOut,
 )
-from api.services import Services  # noqa: E402
-from rag.cache import stable_key  # noqa: E402
+from rag.config import PromptError  # noqa: E402
 from rag.exporters import datasheet_to_xlsx, download_name, script_to_text  # noqa: E402
+from rag.generator import parse_requirement  # noqa: E402
 from rag.llm_client import LLMConnectionError, LLMResponseError  # noqa: E402
-from rag.prompts import PromptError  # noqa: E402
-from rag.requirement_parser import parse_requirement  # noqa: E402
 from rag.schema import TestCaseParseError  # noqa: E402
+from rag.utils import stable_key  # noqa: E402
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -47,43 +49,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+services = Services(REPO_ROOT)
+
 _DEFAULT_CORS_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:4173",
 ]
-
-services = Services(REPO_ROOT)
-
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-# Requirements are pasted or uploaded as text; anything larger than this is
-# not a requirement.
+# Requirements are pasted or uploaded as text; anything larger is not one.
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 UPLOAD_SUFFIXES = {".txt", ".md"}
 
 # How many generations may run at once. On a CPU-only box the model already
-# uses every core, so a second concurrent generation does not finish sooner —
-# it makes both take roughly twice as long, and the fixed request timeout then
-# starts catching requests that would have succeeded. Queueing instead keeps
-# each one at its normal speed. Raise it only where the model has headroom
-# (a GPU, or a remote Ollama).
+# uses every core, so a second concurrent generation does not finish sooner
+# - it makes both take roughly twice as long, and the fixed request timeout
+# then starts catching requests that would have succeeded. Raise it only
+# where the model has headroom (a GPU, or a remote Ollama).
 MAX_CONCURRENT_GENERATIONS = max(1, int(os.getenv("MAX_CONCURRENT_GENERATIONS", "1")))
 
 # Created in `lifespan` rather than at import: an asyncio.Semaphore binds
-# itself to the first event loop that contends on it, and a module-level one
-# would outlive the loop it was bound to.
+# itself to the first event loop that contends on it.
 _generation_gate: asyncio.Semaphore | None = None
 
 
 async def _generate(work):
     """Runs one blocking generation on a worker thread, admitting at most
-    MAX_CONCURRENT_GENERATIONS of them at a time.
+    MAX_CONCURRENT_GENERATIONS at a time.
 
-    The endpoints are `async def` so the event loop keeps serving
-    `/api/health`, uploads and exports while a generation that can take
-    minutes is in flight. The semaphore is the other half: it stops several
-    of those generations from fighting over the same cores, which on CPU
-    makes all of them slower rather than any of them sooner.
+    The endpoints are `async def` so the event loop keeps serving health,
+    uploads and exports while a generation that can take minutes is in
+    flight. The semaphore is the other half: it stops several generations
+    from fighting over the same cores.
     """
     assert _generation_gate is not None, "lifespan did not run"
     async with _generation_gate:
@@ -94,7 +91,7 @@ async def _generate(work):
 async def lifespan(app: FastAPI):
     global _generation_gate
     _generation_gate = asyncio.Semaphore(MAX_CONCURRENT_GENERATIONS)
-    # Warming up on a background thread keeps the port open immediately —
+    # Warming up on a background thread keeps the port open immediately, so
     # the frontend can render and call /api/health while the model loads.
     threading.Thread(target=services.warm_up, daemon=True).start()
     yield
@@ -103,8 +100,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PTC Test Case Generator", version="1.0", lifespan=lifespan)
 
 # The React dev server runs on a different port, so the browser treats API
-# calls as cross-origin. Localhost only by default; override CORS_ORIGINS in
-# .env deliberately if the app is ever served from elsewhere.
+# calls as cross-origin. Localhost only by default.
 _cors_env = os.getenv("CORS_ORIGINS")
 _cors_origins = (
     [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
@@ -116,10 +112,9 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
-    # Without this, a cross-origin fetch (anything not going through the Vite
-    # dev proxy) can read the response body but not this header, so the
-    # browser falls back to a generic "download" filename with no extension
-    # — easy to mistake for the download being broken.
+    # Without this a cross-origin fetch can read the body but not this
+    # header, so the browser falls back to a generic "download" filename
+    # with no extension - easy to mistake for a broken download.
     expose_headers=["Content-Disposition"],
 )
 
@@ -131,8 +126,7 @@ async def health() -> HealthResponse:
 
 def _health() -> HealthResponse:
     """What the UI shows on load: whether the knowledge base has anything in
-    it and whether the model is reachable. Neither is fatal, but both are
-    worth knowing before waiting on a generation.
+    it and whether the model is reachable.
     """
     try:
         chunk_count = services.vector_store.count()
@@ -154,10 +148,9 @@ def _health() -> HealthResponse:
 
 @app.post("/api/requirements/upload", response_model=RequirementUploadResponse)
 async def upload_requirement(file: UploadFile = File(...)) -> RequirementUploadResponse:
-    """Reads a requirement out of an uploaded text file, so a user can drop
-    in a requirement document instead of pasting it. The text is returned to
-    the browser rather than held server-side — the user can then edit it
-    before generating, and the server stays stateless.
+    """Reads a requirement out of an uploaded text file. The text is returned
+    to the browser rather than held server-side, so the user can edit it
+    before generating and the server stays stateless.
     """
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in UPLOAD_SUFFIXES:
@@ -169,7 +162,9 @@ async def upload_requirement(file: UploadFile = File(...)) -> RequirementUploadR
 
     raw = await file.read()
     if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(400, "That file is larger than 2 MB — paste the requirement instead.")
+        raise HTTPException(
+            400, "That file is larger than 2 MB - paste the requirement instead."
+        )
 
     text = raw.decode("utf-8", errors="replace").strip()
     if not text:
@@ -189,8 +184,8 @@ async def generate_test_cases(
     generation = services.settings.generation
 
     # Keyed on everything that can change the answer, the model and the
-    # prompt file included, so editing config/prompts.yaml is still picked up
-    # on the next request exactly as PromptLibrary promises.
+    # prompt file included, so editing config/prompts.yaml is still picked
+    # up on the next request exactly as PromptLibrary promises.
     key = stable_key(
         request.requirement_text,
         request.top_k,
@@ -230,6 +225,7 @@ async def generate_test_cases(
         test_cases=[TestCaseOut.from_domain(tc) for tc in result.test_cases],
         retrieved=[_chunk_out(c) for c in result.retrieved_chunks],
         track_subdivisions=result.track_subdivisions,
+        behaviours=result.behaviours,
         mean_confidence=result.mean_confidence,
         review_threshold=services.settings.confidence.review_threshold,
         elapsed_seconds=result.elapsed_seconds,
@@ -244,9 +240,7 @@ async def generate_test_script(request: GenerateScriptRequest) -> GenerateScript
 
     try:
         result = await _generate(
-            lambda: services.script_generator.generate(
-                request.requirement_text, test_cases
-            )
+            lambda: services.script_generator.generate(request.requirement_text, test_cases)
         )
     except (LLMConnectionError, LLMResponseError) as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -264,7 +258,7 @@ async def generate_test_script(request: GenerateScriptRequest) -> GenerateScript
 def export_test_cases(request: ExportTestCasesRequest) -> Response:
     """The datasheet as .xlsx. The rows come back from the browser rather
     than from server memory, so what gets exported is exactly what the user
-    sees — including any edits they made in the table.
+    sees, including their edits.
     """
     content = datasheet_to_xlsx(
         [tc.to_domain() for tc in request.test_cases],
@@ -302,14 +296,12 @@ def _chunk_out(chunk) -> RetrievedChunkOut:
 
 
 def _resolve_port(host: str, port: int, max_attempts: int = 10) -> int:
-    """Binds a throwaway socket to confirm `port` is actually usable before
-    handing it to uvicorn, and steps to the next port if not.
+    """Binds a throwaway socket to confirm `port` is usable before handing it
+    to uvicorn, and steps to the next one if not.
 
-    A stray dev-server process left listening on the configured port, or a
-    Windows-reserved range (Hyper-V/WSL2/Docker exclude blocks), makes
-    uvicorn fail with an opaque `WinError 10013`/`10048` after the reload
-    watcher has already printed its banner. Failing here instead gives a
-    clear reason and a working port on the first try.
+    A leftover dev-server process, or a Windows-reserved range
+    (Hyper-V/WSL2/Docker exclude blocks), makes uvicorn fail with an opaque
+    WinError 10013/10048 after the banner has already printed.
     """
     import socket
 
@@ -339,10 +331,10 @@ def _resolve_port(host: str, port: int, max_attempts: int = 10) -> int:
 
 
 if __name__ == "__main__":
-    # `uvicorn api.main:app --app-dir src --port 8000` (see README) reads its
-    # own --host/--port flags and never imports this block. This entry point
-    # is for `python src/api/main.py`, which honours BACKEND_HOST/PORT from
-    # .env instead, and additionally checks the port is actually free first.
+    # `uvicorn api.main:app --app-dir src --port 8000` reads its own
+    # --host/--port and never imports this block. This entry point is for
+    # `python src/api/main.py`, which honours BACKEND_HOST/PORT from .env
+    # and additionally checks the port is actually free first.
     import uvicorn
 
     _host = os.getenv("BACKEND_HOST", "127.0.0.1")

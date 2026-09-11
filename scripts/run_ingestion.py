@@ -17,9 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from kb_ingestion.config import PipelineConfig  # noqa: E402
-from kb_ingestion.embeddings import LocalBGEM3Embedder  # noqa: E402
 from kb_ingestion.pipeline import IngestionPipeline, discover_files  # noqa: E402
-from kb_ingestion.vector_store import VectorStore  # noqa: E402
+from kb_ingestion.storage import LocalBGEM3Embedder, VectorStore  # noqa: E402
 
 DEFAULT_CONFIG = REPO_ROOT / "config" / "config.yaml"
 

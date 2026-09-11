@@ -1,94 +1,117 @@
-# --- Retrieval + generation ---------------------------------------------
-# Ingestion-only settings live in config/config.yaml. This file controls
-# what happens once the knowledge base is already ingested.
+# Retrieval and generation. Ingestion-only settings: config/config.yaml.
 
-# Must match what config/config.yaml ingested into, and the model it used —
-# query vectors are only comparable to stored vectors from the same model.
+# Must match what config.yaml ingested into, and the model it used - query vectors are
+# only comparable to stored vectors from the same model.
 chroma_persist_dir: chroma_db
 chroma_collection: kb_collection
 embedding_model: BAAI/bge-m3
 embedding_device: auto   # auto | cpu | cuda
 
-# --- Hybrid search -------------------------------------------------------
-# Dense (BGE-M3 cosine) and keyword (BM25) run as two independent rankings
-# and are fused with reciprocal rank fusion. Weights are relative, not
-# required to sum to 1; set one to 0 to disable that arm.
-retrieval_top_k: 8           # chunks handed to the LLM after fusion
-candidates_per_arm: 30       # depth each arm searches before fusion
+# Hybrid search: dense (BGE-M3 cosine) and keyword (BM25) as two independent rankings,
+# fused with reciprocal rank fusion. Weights are relative; 0 disables that arm.
+retrieval_top_k: 5           # chunks handed to the LLM after fusion
+candidates_per_arm: 20       # depth each arm searches before fusion
 dense_weight: 1.0
 keyword_weight: 0.6
 rrf_k: 60                    # RRF damping; higher = flatter rank influence
 min_similarity: 0.0          # 0..1 dense cosine floor; 0 = keep everything
-max_context_chars: 7000      # cap on context text fed to the LLM
+# Prefill dominates wall-clock on CPU, so context is deliberately short: five
+# well-ranked chunks beat eight that push the prompt past 6k tokens.
+max_context_chars: 4000
 
-# [] = search every ingested document_type. Track data is always retrieved
-# as its own separate pass (see track_data_doc_type/track_data_top_k below).
+# [] = search every ingested document_type.
 doc_types: []
+# Track data is always retrieved as its own separate pass, across every subdivision -
+# there is no per-requirement subdivision mapping.
 track_data_doc_type: track_data
-track_data_top_k: 4          # track-feature chunks added on top of top_k,
-                              # searched across every subdivision — there is
-                              # no per-requirement subdivision mapping
+track_data_top_k: 4
 
-# --- Static context (config/config.yaml: static_sources, examples_dir) ---
-# python_apis and track_data are BM25-only here (never embedded — see
-# config.yaml), so these are keyword-match counts, not fused-ranking ones.
+# Static context (config.yaml: static_sources, examples_dir). BM25-only, so these are
+# keyword-match counts, not fused-ranking ones.
 static_api_top_k: 4          # python_apis method/class chunks per request
-static_track_top_k: 4        # track-feature chunks per request, searched
-                              # across every subdivision
+static_track_top_k: 4        # track-feature chunks per request
 
-# data/Examples/ is included in every prompt as a shape template, so it has
-# to be budgeted: unbudgeted it is ~157,000 characters (~39k tokens) against
-# llm_num_ctx below, and Ollama resolves an over-long prompt by dropping its
-# *start* — the requirement text, the retrieved facts, and the rules that
-# forbid copying example values. Each example gets an equal share, truncated
-# on a line boundary; a partial example still shows phrasing and layout.
-examples_test_case_max_chars: 6000    # reference datasheets, datasheet prompt
-examples_script_max_chars: 12000      # reference scripts, script prompt
+# Character budgets on those two blocks - top_k alone cannot bound them, since chunk size
+# depends on the subdivision or stub it came from. Track rows are ~2.3 chars/token against
+# prose's ~4: four unbudgeted chunks measured 4,796 chars but 2,086 tokens, ~110s of every
+# call at this CPU's prefill rate.
+static_track_max_chars: 1200
+static_api_max_chars: 3500   # script prompt only, where the API surface is the authority
 
-# --- Generation (Ollama) -------------------------------------------------
+# data/Examples/ is in every prompt as a shape template, so it has to be budgeted:
+# unbudgeted it is ~157,000 chars (~39k tokens) against llm_num_ctx, and Ollama resolves an
+# over-long prompt by dropping its *start* - the requirement, the retrieved facts, and the
+# rules forbidding copying example values. Each example gets an equal share, cut on a line
+# boundary. The datasheet budget is small because schema.py now assembles the house layout;
+# the examples only demonstrate voice.
+examples_test_case_max_chars: 1500    # reference datasheets, datasheet prompt
+examples_script_max_chars: 8000       # reference scripts, script prompt
+
+# Generation (Ollama).
 ollama_host: http://localhost:11434
-llm_model: qwen2.5:7b
-llm_temperature: 0.2
+llm_model: qwen3:4b
+llm_temperature: 0.15
 llm_top_p: 0.9
-llm_max_tokens: 1280
-# Matches script_num_ctx deliberately. Ollama keeps one resident copy of the
-# model per context size, so two different windows make every switch between
-# the datasheet call and the script call unload and reload 7B of weights —
-# ~55s of dead time on this CPU, and a window in which a dropped connection
-# surfaces to the UI as a 503. One shared window costs a larger KV cache and
-# nothing else: prefill time scales with the prompt, not with the window.
-llm_num_ctx: 16384
+# Per writing call (test_case_batch_size behaviours), not per requirement. A whole
+# requirement's rows in one response is what used to get truncated mid-array.
+llm_max_tokens: 700
+# 8192, not 16384: the prompt is ~2.5k tokens and the response budget 700, so a wider
+# window only allocates KV cache that holds nothing. Kept equal to script_num_ctx - Ollama
+# keeps one resident copy per context size, so two windows mean a ~55s reload on every
+# switch between the datasheet call and the script call.
+llm_num_ctx: 8192
 llm_request_timeout_seconds: null
-# Keeps the model resident between requests. A 7B model on CPU takes tens
-# of seconds to load; without this, every request pays that cost again.
+# Keeps the model resident between requests; a 7B on CPU takes tens of seconds to load.
 llm_keep_alive: 30m
-# 0 = let Ollama pick. Set to your physical core count (not threads) if
-# generation is slower than expected.
-llm_num_threads: 0
+# auto = one thread per logical processor. Measured, not assumed: on this 6-core/12-thread
+# box, num_thread=12 gave 20.4 tok/s prefill against 6 threads' 15.9 - 28% on the half that
+# dominates wall-clock. An integer pins it; 0 hands the choice to Ollama. Re-measure with
+# scripts/bench_generation.py on other hardware.
+llm_num_threads: auto
+# qwen3 emits a <think> block before every answer unless told not to, spending decode
+# tokens on reasoning this pipeline never reads. Ignored by models without the toggle.
+llm_think: false
 
-# How many test cases a requirement needs is derived from the requirement
-# itself — one per verifiable behaviour it specifies — so there is no target
-# count to configure. This is only the ceiling that stops a sprawling
-# requirement from asking for a response longer than llm_max_tokens can hold.
+# Two-stage test-case generation. Enumerating behaviours and writing house-style JSON
+# compete for the same attention budget in a small model, and one call's output budget is
+# what silently truncated coverage. So: a plan call emitting `N|type|behaviour` lines, then
+# writing calls over slices of that list.
+# Enumeration is the easier half, so it can run on a smaller model - but only pays off if
+# Ollama can keep both resident (OLLAMA_MAX_LOADED_MODELS >= 2 and the RAM for it).
+# null = use llm_model for both.
+plan_model: null
+# The plan call sees far less of the KB and no track data at all: enumerating which
+# behaviours exist needs the requirement's vocabulary, not its values.
+plan_context_max_chars: 1200
+# 320 was not enough - a 5-behaviour list came back cut off mid-sentence, and a truncated
+# behaviour makes the writing call rewrite an earlier row. The call stops on its own well
+# before this ceiling, so the ceiling only has to be safe, not tight.
+plan_max_tokens: 600
+plan_temperature: 0.35       # breadth, not safety: the plan wants coverage
+test_case_batch_size: 4      # behaviours written per call
+
+# How many writing calls may be in flight. Not free on CPU: the slots share cores and
+# Ollama splits the shared-prefix KV cache across them, so each call gets slower; the win is
+# one call's prefill (compute-bound) overlapping another's decode (memory-bound). Hence 2,
+# not "as many batches as there are" - measure before raising it.
+# Needs OLLAMA_NUM_PARALLEL >= this in the environment `ollama serve` runs in; below that
+# the requests just queue server-side. 1 restores strictly sequential batches.
+writing_parallelism: 2
+
+# A ceiling on how many behaviours the plan call may enumerate, not a target count. How
+# many cases a requirement needs is derived from the requirement - one per behaviour.
 max_test_cases: 20
 
-# --- Test-script generation ---------------------------------------------
-# The script call is a second, longer generation, so it gets its own budget.
+# Test-script generation: a second, longer call, with its own budget and context window.
+# It carries reference scripts and the API surface on top of the retrieved context. Keep
+# script_num_ctx equal to llm_num_ctx - see the note there for why differing values cost.
 script_max_tokens: 1792
-# ...and its own context window setting: it carries reference scripts and the
-# API surface on top of the retrieved context. Keep this equal to llm_num_ctx
-# unless you have measured that the datasheet call needs a smaller one — see
-# the note there for why differing values are expensive.
-script_num_ctx: 16384
+script_num_ctx: 8192
 
-# --- Confidence scoring --------------------------------------------------
-# Every generated test case gets three component scores, combined into one
-# overall score with these weights (normalised internally):
-#   retrieval  - how strong the supporting KB context was
-#   grounding  - how much of the test case's wording traces back to that
-#                context rather than being invented
-#   similarity - cosine similarity of the generated test case against the
-#                closest existing test case for the same requirement
+# Confidence scoring. Three components, combined with these weights (normalised
+# internally): retrieval = how strong the supporting KB context was; grounding = how much
+# of the case's wording traces back to it rather than being invented; similarity = cosine
+# against the closest existing test case for the same requirement.
 confidence_weights:
   retrieval: 0.3
   grounding: 0.3
