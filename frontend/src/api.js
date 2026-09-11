@@ -37,18 +37,20 @@ export async function fetchHealth() {
 // No test-case count is sent: how many cases a requirement needs is derived
 // from the requirement itself, server-side. `refresh` asks the server to run
 // the model again instead of replaying an identical earlier result.
-export function generateTestCases({ requirementText, topK, refresh = false }) {
+export function generateTestCases({ requirementText, topK, subdivisionId, refresh = false }) {
   return json("/test-cases", {
     requirement_text: requirementText,
     top_k: topK,
+    subdivision_id: subdivisionId || null,
     refresh,
   });
 }
 
-export function generateTestScript({ requirementText, testCases }) {
+export function generateTestScript({ requirementText, testCases, subdivisionId }) {
   return json("/test-script", {
     requirement_text: requirementText,
     test_cases: testCases,
+    subdivision_id: subdivisionId || null,
   });
 }
 

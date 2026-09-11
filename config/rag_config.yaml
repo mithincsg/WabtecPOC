@@ -7,18 +7,18 @@
 chroma_persist_dir: chroma_db
 chroma_collection: kb_collection
 embedding_model: BAAI/bge-m3
-embedding_device: auto   # auto | cpu | cuda
+embedding_device: auto # auto | cpu | cuda
 
 # --- Hybrid search -------------------------------------------------------
 # Dense (BGE-M3 cosine) and keyword (BM25) run as two independent rankings
 # and are fused with reciprocal rank fusion. Weights are relative, not
 # required to sum to 1; set one to 0 to disable that arm.
-retrieval_top_k: 14          # chunks handed to the LLM after fusion
-candidates_per_arm: 30       # depth each arm searches before fusion
+retrieval_top_k: 14 # chunks handed to the LLM after fusion
+candidates_per_arm: 30 # depth each arm searches before fusion
 dense_weight: 1.0
 keyword_weight: 0.6
-rrf_k: 60                    # RRF damping; higher = flatter rank influence
-min_similarity: 0.0          # 0..1 dense cosine floor; 0 = keep everything
+rrf_k: 60 # RRF damping; higher = flatter rank influence
+min_similarity: 0.0 # 0..1 dense cosine floor; 0 = keep everything
 # Cap on context text fed to the LLM. This used to be 7000, which for a
 # compound requirement naming several TBC/CFG parameters silently dropped
 # some of them: retrieval correctly ranked a parameter's definition inside
@@ -36,14 +36,15 @@ max_context_chars: 14000
 # separately, by the requirement -> subdivision map in track_mapping.yaml.
 doc_types: []
 track_data_doc_type: track_data
-track_data_top_k: 4          # track-feature chunks added on top of top_k
+track_data_top_k: 4 # track-feature chunks added on top of top_k
 
 # --- Static context (config/config.yaml: static_sources, examples_dir) ---
 # python_apis and track_data are BM25-only here (never embedded — see
 # config.yaml), so these are keyword-match counts, not fused-ranking ones.
-static_api_top_k: 4          # python_apis method/class chunks per request
-static_track_top_k: 4        # track-feature chunks per request (still
-                              # filtered to the requirement's subdivisions)
+static_api_top_k: 4 # python_apis method/class chunks per request
+static_track_top_k:
+  4 # track-feature chunks per request (still
+  # filtered to the requirement's subdivisions)
 
 # Script generation runs its own knowledge-base pass, so the script prompt
 # carries the parameter-configuration and data-dictionary text the concrete
@@ -79,11 +80,11 @@ llm_top_p: 0.9
 # schema.py's truncation salvage correctly recovered only the cases the model
 # had *finished* — "asked for 11, got 3 back" rather than an error. 4096 fixed
 # that but pushed a large compound requirement's generation time past
-# llm_request_timeout_seconds on CPU. 2048 is the middle ground: enough for
-# roughly 8-10 test cases without truncating, faster than 4096. A requirement
-# that genuinely needs more than that will still be truncated (harmlessly —
-# the salvage logic keeps what finished) — raise this again if that turns out
-# to matter more than the extra wait.
+# llm_request_timeout_seconds on CPU. 2048 still timed out on CPU with
+# qwen2.5:7b, so lowered to 1024 to cut generation time; a requirement that
+# genuinely needs more than that will still be truncated (harmlessly — the
+# salvage logic keeps what finished) — raise this again if that turns out to
+# matter more than the extra wait.
 llm_max_tokens: 2048
 # Input + output must both fit here. The script prompt is the largest one:
 # system rules + approved test cases + one reference script (example_max_chars)
@@ -92,19 +93,25 @@ llm_max_tokens: 2048
 # over-long prompt from the start — losing the system rules first. Lower this
 # only together with example_max_chars / max_context_chars / the top_k values.
 llm_num_ctx: 24576
-llm_request_timeout_seconds: 900
+llm_request_timeout_seconds: null # no timeout; wait as long as the model needs
 # Keeps the model resident between requests. A 7B model on CPU takes tens
 # of seconds to load; without this, every request pays that cost again.
 llm_keep_alive: 30m
 # 0 = let Ollama pick. Set to your physical core count (not threads) if
-# generation is slower than expected.
-llm_num_threads: 0
+# generation is slower than expected. i7-1355U has 10 physical cores (2 P +
+# 8 E); explicit 10 tried after auto-selection ran slow on this CPU.
+llm_num_threads: 10
 
 # How many test cases a requirement needs is derived from the requirement
 # itself — one per verifiable behaviour it specifies — so there is no target
 # count to configure. This is only the ceiling that stops a sprawling
 # requirement from asking for a response longer than llm_max_tokens can hold.
 max_test_cases: 20
+# test_case_plan enumerates every behaviour first; test_cases is then called
+# once per this many behaviours, so each call's JSON is short enough to never
+# be truncated by llm_max_tokens. Lower it further for a model with a smaller
+# effective output budget, raise it to make fewer, larger calls.
+test_case_batch_size: 5
 
 # --- Test-script generation ---------------------------------------------
 # The script call is a second, longer generation, so it gets its own budget.

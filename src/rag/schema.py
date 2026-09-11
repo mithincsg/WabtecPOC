@@ -43,6 +43,61 @@ class TestCaseParseError(ValueError):
     """Raised when the model's response could not be parsed into test cases."""
 
 
+class BehaviourPlanParseError(TestCaseParseError):
+    """Raised when test_case_plan's response had no usable behaviour lines.
+
+    Subclasses TestCaseParseError so callers that already catch it (the API
+    layer maps it to a 502) handle a failed plan step the same way as a
+    failed test-case step, with no separate error-handling path needed.
+    """
+
+
+@dataclass
+class Behaviour:
+    """One line of test_case_plan's output: a single verifiable behaviour
+    the requirement specifies, agreed before any test case is written for it.
+    """
+
+    index: int
+    kind: str  # "P" (positive) | "B" (boundary) | "N" (negative/suppression)
+    text: str
+
+    def __str__(self) -> str:
+        return f"{self.index}. [{self.kind}] {self.text}"
+
+
+# "1|P|<sentence>" - see test_case_plan's system prompt in config/prompts.yaml
+# for the exact format the model is instructed to produce.
+_BEHAVIOUR_LINE_RE = re.compile(r"^\s*\d+\s*\|\s*([PBN])\s*\|\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def parse_behaviour_plan(raw_response: str) -> list[Behaviour]:
+    """Parses test_case_plan's line-per-behaviour output.
+
+    Re-numbers from 1 regardless of what the model wrote as its own leading
+    number, the same reasoning as `parse_test_cases` re-numbering `s_no`:
+    dense and 1-based even if the model skips or repeats one.
+    """
+    behaviours: list[Behaviour] = []
+    for line in raw_response.splitlines():
+        match = _BEHAVIOUR_LINE_RE.match(line)
+        if not match:
+            continue
+        kind, text = match.groups()
+        text = text.strip()
+        if not text:
+            continue
+        behaviours.append(Behaviour(index=len(behaviours) + 1, kind=kind.upper(), text=text))
+
+    if not behaviours:
+        raise BehaviourPlanParseError(
+            "The model's behaviour-plan response had no usable 'N|type|behaviour' "
+            "lines. It may have written prose instead of the expected format, or "
+            "run out of output tokens."
+        )
+    return behaviours
+
+
 @dataclass
 class ConfidenceBreakdown:
     """Why a test case scored what it did.
@@ -108,7 +163,7 @@ def parse_test_cases(
     for item in raw_cases:
         if not isinstance(item, dict):
             continue
-        description = _clean(item.get("description"))
+        description = _build_description(item)
         if not description:
             # A row with no description is not a test case; dropping it beats
             # exporting a blank line into the datasheet.
@@ -133,6 +188,37 @@ def parse_test_cases(
     if not test_cases:
         raise TestCaseParseError("The model returned no usable test cases.")
     return test_cases
+
+
+def _build_description(item: dict) -> str:
+    """The datasheet's "Description" cell, in the house
+    "Test Scenario: ...\\n-condition\\n\\nVerify,\\n..." shape.
+
+    The current test_cases prompt returns scenario/conditions/verify as
+    separate fields rather than asking the model to assemble that string
+    itself (assembly is mechanical and doing it here means one bad line
+    break can't cost an otherwise-sound test case). A response still
+    carrying the older single "description" string is used as-is, so a
+    partial rollback of the prompt keeps working without a code change.
+    """
+    scenario = _clean(item.get("scenario"))
+    if not scenario:
+        return _clean(item.get("description"))
+
+    lines = [f"Test Scenario: {scenario}"]
+    conditions = item.get("conditions")
+    if isinstance(conditions, (list, tuple)):
+        lines.extend(f"-{_clean(c)}" for c in conditions if _clean(c))
+    elif _clean(conditions):
+        lines.append(f"-{_clean(conditions)}")
+
+    verify = _clean(item.get("verify"))
+    if verify:
+        lines.append("")
+        lines.append("Verify,")
+        lines.append(verify)
+
+    return "\n".join(lines)
 
 
 def _extract_json(raw_response: str) -> dict:

@@ -49,12 +49,19 @@ class GenerationConfig:
     top_p: float = 0.9
     max_tokens: int = 2048
     num_ctx: int = 24576
-    request_timeout_seconds: int = 900
+    # None = wait indefinitely (passed straight to requests as timeout=None).
+    request_timeout_seconds: int | None = 900
     keep_alive: str = "30m"
     num_threads: int = 0
     # A ceiling, not a target: the model decides how many cases the
     # requirement needs, and this only bounds the response length.
     max_test_cases: int = 20
+    # Test-case generation writes JSON for this many agreed behaviours per
+    # LLM call (test_case_plan enumerates all of them first). Small enough
+    # that one batch's JSON response never approaches llm_max_tokens, so
+    # coverage can no longer be lost to truncation the way a single big call
+    # could lose it.
+    test_case_batch_size: int = 5
     script_max_tokens: int = 3072
 
 
@@ -104,6 +111,7 @@ _GENERATION_KEYS = {
     "llm_keep_alive": "keep_alive",
     "llm_num_threads": "num_threads",
     "max_test_cases": "max_test_cases",
+    "test_case_batch_size": "test_case_batch_size",
     "script_max_tokens": "script_max_tokens",
 }
 _CONFIDENCE_KEYS = {

@@ -225,10 +225,16 @@ class StaticContextProvider:
         )
         return _format_hits(hits)
 
-    def track_context(self, query: str, requirement_id: str | None, top_k: int) -> str:
+    def track_context(
+        self,
+        query: str,
+        requirement_id: str | None,
+        top_k: int,
+        subdivision_id: str | None = None,
+    ) -> str:
         if top_k <= 0:
             return ""
-        selection = self._track_mapping.selection_for(requirement_id)
+        selection = self._track_mapping.selection_for(requirement_id, subdivision_id)
         if not selection.enabled:
             return ""
 

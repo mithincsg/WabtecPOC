@@ -196,6 +196,7 @@ async def generate_test_cases(
         request.requirement_text,
         request.top_k,
         request.doc_types,
+        request.subdivision_id,
         generation.model,
         generation.max_test_cases,
         services.prompt_revision(),
@@ -212,6 +213,7 @@ async def generate_test_cases(
             max_test_cases=generation.max_test_cases,
             doc_types=request.doc_types,
             top_k=request.top_k,
+            subdivision_id=request.subdivision_id,
         )
 
     try:
@@ -246,7 +248,7 @@ async def generate_test_script(request: GenerateScriptRequest) -> GenerateScript
     try:
         result = await _generate(
             lambda: services.script_generator.generate(
-                request.requirement_text, test_cases
+                request.requirement_text, test_cases, request.subdivision_id
             )
         )
     except (LLMConnectionError, LLMResponseError) as exc:

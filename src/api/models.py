@@ -94,6 +94,11 @@ class GenerateTestCasesRequest(BaseModel):
     requirement_text: str = Field(min_length=1)
     top_k: int | None = Field(default=None, ge=1, le=50)
     doc_types: list[str] | None = None
+    # Explicit subdivision override from the UI. Takes precedence over
+    # config/track_mapping.yaml's requirement -> subdivision lookup, for a
+    # requirement the mapping file doesn't (yet) cover or a reviewer who
+    # wants to check a different subdivision's track data.
+    subdivision_id: str | None = None
     # Set by a caller that wants the model re-run rather than the previous
     # identical result replayed. The UI does not expose it; it exists so a
     # cached answer is never the only answer available.
@@ -120,6 +125,10 @@ class GenerateScriptRequest(BaseModel):
     # The reviewed rows, not the ones first generated — the script is written
     # against whatever the user actually kept.
     test_cases: list[TestCaseOut] = Field(min_length=1)
+    # Same subdivision override as GenerateTestCasesRequest — independent
+    # here since script generation is a separate request the reviewer can
+    # issue with a different subdivision in mind.
+    subdivision_id: str | None = None
 
 
 class GenerateScriptResponse(BaseModel):

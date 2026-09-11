@@ -35,13 +35,15 @@ from .pdf_extractor import PDFExtractor  # noqa: E402
 from .python_extractor import PythonExtractor  # noqa: E402
 from .text_extractor import TextExtractor  # noqa: E402
 from .xlsx_extractor import XLSXExtractor  # noqa: E402
+from .xml_extractor import XMLTrackDataExtractor  # noqa: E402
 
 _python_extractor = PythonExtractor()
 _xlsx_extractor = XLSXExtractor()
 
 # One parser per format, as the brief specifies: PyMuPDF for PDF, openpyxl
 # for spreadsheets, stdlib ast for Python stubs, stdlib html.parser for the
-# track reports.
+# track reports, stdlib ElementTree for the machine-serialized track exports
+# paired with those reports.
 EXTRACTORS_BY_SUFFIX: dict[str, Extractor] = {
     ".pdf": PDFExtractor(),
     ".xlsx": _xlsx_extractor,
@@ -51,6 +53,7 @@ EXTRACTORS_BY_SUFFIX: dict[str, Extractor] = {
     ".txt": TextExtractor(),
     ".html": HTMLTrackDataExtractor(),
     ".htm": HTMLTrackDataExtractor(),
+    ".xml": XMLTrackDataExtractor(),
 }
 
 __all__ = [
@@ -62,4 +65,5 @@ __all__ = [
     "PythonExtractor",
     "TextExtractor",
     "XLSXExtractor",
+    "XMLTrackDataExtractor",
 ]

@@ -78,7 +78,17 @@ class TrackMapping:
 
         self._mappings, self._unmapped, self._mtime = mappings, unmapped, mtime
 
-    def selection_for(self, requirement_id: str | None) -> TrackSelection:
+    def selection_for(
+        self, requirement_id: str | None, subdivision_id: str | None = None
+    ) -> TrackSelection:
+        """An explicit `subdivision_id` (from the UI) always wins over the
+        requirement -> subdivision map: it's the reviewer overriding or
+        supplying what the mapping file doesn't (yet) know for this
+        requirement, not a second vote alongside it.
+        """
+        if subdivision_id and str(subdivision_id).strip():
+            return TrackSelection((normalize_subdivision(subdivision_id),), search_all=False)
+
         self._load()
 
         if requirement_id:

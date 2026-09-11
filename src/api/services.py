@@ -156,6 +156,7 @@ class Services:
                         static_context=self.static_context,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
                         example_max_chars=self.settings.retrieval.example_max_chars,
+                        test_case_batch_size=self.settings.generation.test_case_batch_size,
                     )
         return self._test_case_generator
 

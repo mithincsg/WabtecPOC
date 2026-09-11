@@ -147,14 +147,19 @@ textarea {
   font-size: 0.8125rem;
 }
 
+.field .required {
+  color: var(--danger, #b3261e);
+}
+
 .help {
   color: var(--ink-soft);
   font-size: 0.75rem;
   margin: 0;
 }
 
-textarea {
-  min-height: 17rem;
+textarea,
+.field input[type="text"],
+.field select {
   padding: 0.625rem 0.75rem;
   border: 1px solid var(--rule-strong);
   border-radius: 2px;
@@ -162,6 +167,10 @@ textarea {
   font-family: var(--mono);
   font-size: 0.78125rem;
   line-height: 1.55;
+}
+
+textarea {
+  min-height: 17rem;
   resize: vertical;
 }
 

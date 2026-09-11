@@ -97,11 +97,11 @@ not a target.
 
 ## The three source folders
 
-| Folder | Holds | Parsed with |
-|---|---|---|
+| Folder                 | Holds                                                                                               | Parsed with                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------- |
 | `data/knowledge_base/` | Requirement specs, reference datasheets, reference scripts, data dictionaries, configuration guides | PyMuPDF, openpyxl, plain text |
-| `data/python_apis/` | The WCR test-automation API stubs | stdlib `ast` |
-| `data/track_data/` | One HTML subdivision report per subdivision | stdlib `html.parser` |
+| `data/python_apis/`    | The WCR test-automation API stubs                                                                   | stdlib `ast`                  |
+| `data/track_data/`     | One HTML subdivision report per subdivision                                                         | stdlib `html.parser`          |
 
 Roots are declared in `config/config.yaml`, not in code. Every chunk is
 stamped with a `document_type` taken from its root; set
@@ -120,7 +120,7 @@ requirement applies to:
 mappings:
   L2R9479: ["08880"]
   L2R7983: ["08101"]
-unmapped: exclude     # or `all`
+unmapped: exclude # or `all`
 ```
 
 `8880` and `08880` both work, and `L2R9479_A` falls back to `L2R9479`. A
@@ -176,11 +176,11 @@ the chunk count changes, so it follows ingestion automatically.
 Every generated row gets three component scores and a weighted overall score.
 Components rather than one number, because they fail differently:
 
-| Component | What it measures | Low means |
-|---|---|---|
-| `retrieval` | Mean cosine of the strongest retrieved chunks | Nothing in the knowledge base really covers this requirement |
-| `grounding` | How much of the row's vocabulary — and especially its identifiers — traces back to the retrieved context | The model may have invented a parameter, block or API name |
-| `similarity_to_existing` | Cosine of the row against the closest **existing** test case for the same requirement | Either a genuinely new boundary case, or fabrication |
+| Component                | What it measures                                                                                         | Low means                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `retrieval`              | Mean cosine of the strongest retrieved chunks                                                            | Nothing in the knowledge base really covers this requirement |
+| `grounding`              | How much of the row's vocabulary — and especially its identifiers — traces back to the retrieved context | The model may have invented a parameter, block or API name   |
+| `similarity_to_existing` | Cosine of the row against the closest **existing** test case for the same requirement                    | Either a genuinely new boundary case, or fabrication         |
 
 `similarity_to_existing` is the strongest signal available, because a high
 score means the model reproduced something a human already wrote and signed
@@ -239,7 +239,7 @@ thread at startup, so the first real request doesn't pay for either.
 ### What the server does to stay out of the model's way
 
 The generation itself is the floor on how fast a request can be. Everything
-around it is arranged so that it is the *only* thing you wait for:
+around it is arranged so that it is the _only_ thing you wait for:
 
 - **Nothing is embedded or scored twice.** The embedding model sits behind a
   cache keyed on exact text. The requirement query was previously embedded
@@ -276,13 +276,13 @@ edit.
 
 ## Configuration
 
-| File | Controls |
-|---|---|
-| `config/config.yaml` | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
-| `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
-| `config/prompts.yaml` | Every system and user prompt |
-| `config/track_mapping.yaml` | Requirement → subdivision |
-| `.env` | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target |
+| File                        | Controls                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `config/config.yaml`        | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location                                                           |
+| `config/rag_config.yaml`    | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
+| `config/prompts.yaml`       | Every system and user prompt                                                                                                              |
+| `config/track_mapping.yaml` | Requirement → subdivision                                                                                                                 |
+| `.env`                      | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target     |
 
 ## Layout
 

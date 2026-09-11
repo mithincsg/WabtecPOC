@@ -9,7 +9,7 @@ from .llm_client import LLMClient
 from .prompts import PromptLibrary
 from .requirement_parser import ParsedRequirement, parse_requirement
 from .retriever import HybridRetriever, RetrievedChunk
-from .schema import TestCase, parse_test_cases
+from .schema import Behaviour, TestCase, parse_behaviour_plan, parse_test_cases
 from .static_context import StaticContextProvider
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,10 @@ DEFAULT_SCRIPT_DOC_TYPE = "reference_test_scripts"
 # Ceiling on one generation, overridden from config. Not a target — see
 # TestCaseGenerator.generate.
 DEFAULT_MAX_TEST_CASES = 20
+
+# Shown in a prompt wherever a parsed requirement has no ID, rather than
+# leaving the placeholder empty.
+_UNSTATED_REQUIREMENT_ID = "(not stated)"
 
 
 @dataclass
@@ -52,8 +56,17 @@ class ScriptResult:
 
 
 class TestCaseGenerator:
-    """requirement -> understanding -> hybrid retrieval -> context -> LLM ->
-    datasheet rows -> confidence scores.
+    """requirement -> understanding -> hybrid retrieval -> context ->
+    behaviour plan -> batched datasheet-row generation -> confidence scores.
+
+    Generation is two kinds of LLM call, not one: `test_case_plan` first
+    enumerates every verifiable behaviour the requirement specifies (a short,
+    schema-free response that cannot itself be truncated mid-structure), then
+    `test_cases` is called once per `test_case_batch_size` behaviours to
+    write their datasheet rows as JSON. Each batch's response is short enough
+    to never approach `llm_max_tokens`, so a sprawling requirement can no
+    longer lose its last few behaviours to truncation the way one big
+    single-call response could.
     """
 
     def __init__(
@@ -65,6 +78,7 @@ class TestCaseGenerator:
         static_context: StaticContextProvider | None = None,
         static_track_top_k: int = 4,
         example_max_chars: int | None = None,
+        test_case_batch_size: int = 5,
     ):
         self.retriever = retriever
         self.llm_client = llm_client
@@ -73,6 +87,7 @@ class TestCaseGenerator:
         self.static_context = static_context
         self.static_track_top_k = static_track_top_k
         self.example_max_chars = example_max_chars
+        self.test_case_batch_size = max(1, test_case_batch_size)
 
     def generate(
         self,
@@ -81,10 +96,11 @@ class TestCaseGenerator:
         max_test_cases: int = DEFAULT_MAX_TEST_CASES,
         doc_types: list[str] | None = None,
         top_k: int | None = None,
+        subdivision_id: str | None = None,
     ) -> TestCaseResult:
         """How many test cases come back is decided by the requirement, not
-        by the caller: the prompt asks the model to enumerate the verifiable
-        behaviours the requirement specifies and write one case for each.
+        by the caller: test_case_plan enumerates the verifiable behaviours
+        the requirement specifies and one case is written per behaviour.
         `max_test_cases` is only a ceiling, so a sprawling requirement cannot
         ask for a response longer than the model's output budget.
         """
@@ -96,18 +112,15 @@ class TestCaseGenerator:
             requirement_id=parsed.requirement_id,
             doc_types=doc_types,
             top_k=top_k,
+            subdivision_id=subdivision_id,
         )
 
-        # The three blocks are labelled, not just concatenated: the first two
-        # are where values may come from, the third is only a wording model.
-        # Unlabelled, the examples read as just more context and their block
-        # numbers and TBC values get copied into the new test cases.
-        track_context = self._static_track_context(parsed)
-        examples = (
-            self.static_context.test_case_examples(self.example_max_chars)
-            if self.static_context
-            else ""
-        )
+        # Only KNOWLEDGE BASE and TRACK DATA are labelled into $context: they
+        # are where a concrete value may come from. The wording template is
+        # sent to the model separately as $wording_template, so it is never
+        # mistaken for a third source of values the way merging it in here
+        # would invite.
+        track_context = self._static_track_context(parsed, subdivision_id)
         context = _append_static_context(
             _labelled(
                 "KNOWLEDGE BASE — parameters, data dictionaries, test guide",
@@ -119,29 +132,56 @@ class TestCaseGenerator:
                 "switch and signal values for this requirement",
                 track_context,
             ),
-            _labelled(
-                "WORDING TEMPLATE — examples from other requirements; copy their "
-                "phrasing, never their values",
-                examples,
-            ),
         )
+        wording_template = (
+            self.static_context.test_case_examples(self.example_max_chars)
+            if self.static_context
+            else ""
+        ) or "(No reference test cases were available.)"
 
-        prompt = self.prompts.test_cases
-        user_prompt = prompt.render_user(
-            requirement_id=parsed.requirement_id or "(not stated)",
+        plan_prompt = self.prompts.pair("test_case_plan")
+        plan_user_prompt = plan_prompt.render_user(
+            requirement_id=parsed.requirement_id or _UNSTATED_REQUIREMENT_ID,
             requirement_text=parsed.raw_text.strip(),
             context=context,
             max_test_cases=str(max_test_cases),
-            folder_hint=_folder_hint(parsed),
-            columns=", ".join(label for _, label in _column_labels()),
         )
+        plan_response = self.llm_client.generate(plan_prompt.system, plan_user_prompt)
+        behaviours = parse_behaviour_plan(plan_response)[:max_test_cases]
+        behaviours_block = "\n".join(str(b) for b in behaviours)
 
-        raw_response = self.llm_client.generate(prompt.system, user_prompt)
-        test_cases = parse_test_cases(
-            raw_response,
-            requirement_id=parsed.requirement_id or "",
-            default_folder=parsed.functional_area or "",
-        )
+        test_cases_prompt = self.prompts.test_cases
+        folder_hint = _folder_hint(parsed)
+        raw_responses = [plan_response]
+        test_cases: list[TestCase] = []
+
+        for batch in _chunked(behaviours, self.test_case_batch_size):
+            batch_user_prompt = test_cases_prompt.render_user(
+                requirement_id=parsed.requirement_id or _UNSTATED_REQUIREMENT_ID,
+                requirement_text=parsed.raw_text.strip(),
+                context=context,
+                wording_template=wording_template,
+                behaviours=behaviours_block,
+                batch_list="\n".join(str(b) for b in batch),
+                folder_hint=folder_hint,
+            )
+            raw_response = self.llm_client.generate(
+                test_cases_prompt.system, batch_user_prompt
+            )
+            raw_responses.append(raw_response)
+            test_cases.extend(
+                parse_test_cases(
+                    raw_response,
+                    requirement_id=parsed.requirement_id or "",
+                    default_folder=parsed.functional_area or "",
+                )
+            )
+
+        # Each batch call numbers its own rows from 1 (parse_test_cases has
+        # no notion of the batches around it), so they're renumbered once
+        # here into one dense, requirement-wide sequence.
+        for index, test_case in enumerate(test_cases, start=1):
+            test_case.s_no = index
 
         self.scorer.score(test_cases, retrieval.chunks, parsed.requirement_id)
 
@@ -150,16 +190,18 @@ class TestCaseGenerator:
             functional_area=parsed.functional_area,
             test_cases=test_cases,
             retrieved_chunks=retrieval.chunks,
-            raw_response=raw_response,
+            raw_response="\n\n---\n\n".join(raw_responses),
             track_subdivisions=list(retrieval.track_selection.subdivisions),
             elapsed_seconds=round(time.monotonic() - started, 1),
         )
 
-    def _static_track_context(self, parsed: ParsedRequirement) -> str:
+    def _static_track_context(
+        self, parsed: ParsedRequirement, subdivision_id: str | None = None
+    ) -> str:
         if self.static_context is None:
             return ""
         return self.static_context.track_context(
-            parsed.query_text, parsed.requirement_id, self.static_track_top_k
+            parsed.query_text, parsed.requirement_id, self.static_track_top_k, subdivision_id
         )
 
 
@@ -204,7 +246,10 @@ class TestScriptGenerator:
         self.example_max_chars = example_max_chars
 
     def generate(
-        self, requirement_text: str, test_cases: list[TestCase]
+        self,
+        requirement_text: str,
+        test_cases: list[TestCase],
+        subdivision_id: str | None = None,
     ) -> ScriptResult:
         if not test_cases:
             raise ValueError("Generate test cases before generating a script.")
@@ -234,7 +279,7 @@ class TestScriptGenerator:
         )
         track_context = (
             self.static_context.track_context(
-                query, parsed.requirement_id, self.static_track_top_k
+                query, parsed.requirement_id, self.static_track_top_k, subdivision_id
             )
             if self.static_context
             else ""
@@ -246,6 +291,7 @@ class TestScriptGenerator:
                 query,
                 requirement_id=parsed.requirement_id,
                 top_k=self.kb_top_k,
+                subdivision_id=subdivision_id,
             ).context
         )
         reference_scripts = (
@@ -258,7 +304,7 @@ class TestScriptGenerator:
 
         prompt = self.prompts.test_script
         user_prompt = prompt.render_user(
-            requirement_id=parsed.requirement_id or "(not stated)",
+            requirement_id=parsed.requirement_id or _UNSTATED_REQUIREMENT_ID,
             requirement_text=parsed.raw_text.strip(),
             test_cases=_numbered_test_cases(test_cases),
             api_context=api_context or "(No API definitions were retrieved.)",
@@ -267,6 +313,7 @@ class TestScriptGenerator:
             parameter_context=parameter_context
             or "(No parameter or data-dictionary context matched — every parameter value must be a TODO variable.)",
             reference_scripts=reference_scripts or "(No reference scripts were retrieved.)",
+            branch_range=_branch_range(test_cases),
         )
 
         raw = self.llm_client.generate(
@@ -303,14 +350,19 @@ def _folder_hint(parsed: ParsedRequirement) -> str:
     )
 
 
-def _column_labels():
-    from .schema import DATASHEET_COLUMNS
-
-    return DATASHEET_COLUMNS
-
-
 def _numbered_test_cases(test_cases: list[TestCase]) -> str:
     return "\n\n".join(f"S_no {tc.s_no}:\n{tc.description}" for tc in test_cases)
+
+
+def _branch_range(test_cases: list[TestCase]) -> str:
+    if not test_cases:
+        return ""
+    numbers = ", ".join(str(tc.s_no) for tc in test_cases)
+    return f"Write exactly one branch for each of these S_no values, in order, with no gaps: {numbers}."
+
+
+def _chunked(behaviours: list[Behaviour], size: int) -> list[list[Behaviour]]:
+    return [behaviours[i : i + size] for i in range(0, len(behaviours), size)]
 
 
 def _strip_code_fence(raw: str) -> str:
