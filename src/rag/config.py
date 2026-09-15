@@ -28,13 +28,6 @@ class RetrievalConfig:
 
     static_api_top_k: int = 4
     static_track_top_k: int = 4
-    # Examples are always included in full for every generation, unlike
-    # everything else here — but "in full" still has to fit inside
-    # llm_num_ctx alongside the system prompt and the retrieved KB/track
-    # context, or Ollama silently truncates the prompt from the front and
-    # the model loses the JSON-format instructions entirely. Whole example
-    # blocks are kept (never sliced mid-block) up to this many characters.
-    static_examples_max_chars: int = 8000
 
 
 @dataclass
@@ -45,9 +38,24 @@ class GenerationConfig:
     top_p: float = 0.9
     max_tokens: int = 2048
     num_ctx: int = 8192
-    request_timeout_seconds: int = 900
+    # Two different failures, two different limits: request_timeout_seconds
+    # caps the whole generation (at which point the partial answer is kept),
+    # stall_timeout_seconds caps the gap between streamed tokens (at which
+    # point the model is wedged and the request fails). 0 removes either
+    # limit, which is the default — on CPU there is no wall-clock number that
+    # tells a slow generation apart from a stuck one.
+    request_timeout_seconds: int = 0
+    stall_timeout_seconds: int = 0
     keep_alive: str = "30m"
     num_threads: int = 0
+    # "auto" | "off" | "on". Reasoning models (qwen3, deepseek-r1, gpt-oss)
+    # stream their chain of thought in a separate `thinking` field and only
+    # then start the answer, so on "on" the whole of max_tokens can be spent
+    # thinking and the request ends with empty content. This app wants strict
+    # JSON and runnable Python, not reasoning prose, so "auto" turns thinking
+    # off on every model that advertises the capability and leaves models
+    # without it untouched (Ollama rejects the flag on those).
+    think: str = "auto"
     # A ceiling, not a target: the model decides how many cases the
     # requirement needs, and this only bounds the response length.
     max_test_cases: int = 20
@@ -85,7 +93,6 @@ _RETRIEVAL_KEYS = {
     "track_data_top_k": "track_data_top_k",
     "static_api_top_k": "static_api_top_k",
     "static_track_top_k": "static_track_top_k",
-    "static_examples_max_chars": "static_examples_max_chars",
 }
 _GENERATION_KEYS = {
     "ollama_host": "ollama_host",
@@ -95,8 +102,10 @@ _GENERATION_KEYS = {
     "llm_max_tokens": "max_tokens",
     "llm_num_ctx": "num_ctx",
     "llm_request_timeout_seconds": "request_timeout_seconds",
+    "llm_stall_timeout_seconds": "stall_timeout_seconds",
     "llm_keep_alive": "keep_alive",
     "llm_num_threads": "num_threads",
+    "llm_think": "think",
     "max_test_cases": "max_test_cases",
     "script_max_tokens": "script_max_tokens",
 }

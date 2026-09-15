@@ -11,7 +11,6 @@ from .cache import LruTtlCache
 from .concurrency import run_parallel
 from .config import RetrievalConfig
 from .keyword_index import KeywordHit, KeywordIndex
-from .track_mapping import TrackMapping, TrackSelection
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,6 @@ class RetrievedChunk:
 class RetrievalResult:
     chunks: list[RetrievedChunk]
     context: str
-    track_selection: TrackSelection
     dense_hits: int
     keyword_hits: int
 
@@ -104,14 +102,12 @@ class HybridRetriever:
         embedder: EmbeddingModel,
         vector_store: VectorStore,
         config: RetrievalConfig,
-        track_mapping: TrackMapping,
         keyword_index: KeywordIndex | None = None,
         cache_entries: int = 32,
     ):
         self.embedder = embedder
         self.vector_store = vector_store
         self.config = config
-        self.track_mapping = track_mapping
         self.keyword_index = keyword_index or KeywordIndex(vector_store)
         # Retrieval is deterministic for a given query and filter set, so the
         # repeat passes inside one request (and a re-run of the same
@@ -129,23 +125,23 @@ class HybridRetriever:
         top_k: int | None = None,
     ) -> RetrievalResult:
         if not query_text.strip():
-            return RetrievalResult([], "", TrackSelection((), False), 0, 0)
+            return RetrievalResult([], "", 0, 0)
 
         top_k = top_k if top_k is not None else self.config.top_k
-        selection = self.track_mapping.selection_for(requirement_id)
 
         cache_key = (
             query_text,
             top_k,
             tuple(doc_types) if doc_types else None,
-            tuple(selection.subdivisions),
-            selection.search_all,
-            selection.enabled,
         )
         cached = self._results.get(cache_key)
         if cached is not None:
             return cached
 
+        # Track data is not searched here. It lives in the static BM25 index
+        # (src/rag/static_context.py), filtered to the subdivision picked in
+        # the UI, and is appended to the context by the generator — this
+        # retriever only ever sees the embedded knowledge_base collection.
         passes = [
             _Pass(
                 top_k=top_k,
@@ -153,26 +149,11 @@ class HybridRetriever:
                 exclude_doc_type=self.config.track_data_doc_type,
             )
         ]
-        # Track data is retrieved as its own pass rather than being mixed into
-        # the general one: its chunks are dense tables of track features that
-        # would otherwise crowd out prose context on score alone, and it needs
-        # the subdivision filter that only applies to it.
-        if selection.enabled and self.config.track_data_top_k > 0:
-            passes.append(
-                _Pass(
-                    top_k=self.config.track_data_top_k,
-                    doc_types=[self.config.track_data_doc_type],
-                    subdivisions=(
-                        None if selection.search_all else list(selection.subdivisions)
-                    ),
-                )
-            )
 
         chunks = [c for group in self._search_all(query_text, passes) for c in group]
         result = RetrievalResult(
             chunks=chunks,
             context=self.build_context(chunks),
-            track_selection=selection,
             dense_hits=sum(1 for c in chunks if "dense" in c.matched_by),
             keyword_hits=sum(1 for c in chunks if "keyword" in c.matched_by),
         )

@@ -73,7 +73,10 @@ class TestCase:
     test_type: str = "Positive"
     test_technique: str = "Equivalence Partitioning"
     retired: str = "False"
-    scorable: str = "Yes"
+    # "No" rather than "Yes": scorability is a deliberate reviewer decision
+    # about whether a case counts toward the requirement's score, so the
+    # safe default is the one that needs an explicit opt-in.
+    scorable: str = "No"
     comments: str = ""
     confidence: ConfidenceBreakdown = field(default_factory=ConfidenceBreakdown)
 
@@ -85,6 +88,42 @@ class TestCase:
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+
+# Handed to the inference server as a decoding constraint, so the response is
+# a JSON object of this shape by construction rather than by the model
+# choosing to obey the prompt. "JSON only" in prompts.yaml is a request that
+# instruct models mostly honour and reasoning models often don't — qwen3 will
+# happily spend its whole output budget narrating its plan in prose, which
+# arrives here as "no JSON object" after minutes of CPU time. Constraining
+# the decoder is what makes the model swappable without re-tuning prompts.
+#
+# Only `description` is required: s_no and requirement are assigned by
+# parse_test_cases, and every other field has a normalised default, so
+# demanding them would only give the model more ways to fail. The enums match
+# the tuples above, which is why they're built from them.
+TEST_CASES_JSON_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "test_cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "folder": {"type": "string"},
+                    "optimization_technique": {"type": "string"},
+                    "test_type": {"type": "string", "enum": list(_TEST_TYPES)},
+                    "test_technique": {"type": "string", "enum": list(_TEST_TECHNIQUES)},
+                    "retired": {"type": "string", "enum": list(_TRUE_FALSE)},
+                    "scorable": {"type": "string", "enum": list(_YES_NO)},
+                    "comments": {"type": "string"},
+                },
+                "required": ["description"],
+            },
+        }
+    },
+    "required": ["test_cases"],
+}
 
 
 def parse_test_cases(
@@ -125,7 +164,7 @@ def parse_test_cases(
                     item.get("test_technique"), _TEST_TECHNIQUES, "Equivalence Partitioning"
                 ),
                 retired=_choose(item.get("retired"), _TRUE_FALSE, "False"),
-                scorable=_choose(item.get("scorable"), _YES_NO, "Yes"),
+                scorable=_choose(item.get("scorable"), _YES_NO, "No"),
                 comments=_clean(item.get("comments")),
             )
         )

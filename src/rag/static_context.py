@@ -6,12 +6,24 @@ from pathlib import Path
 from typing import Any
 
 from kb_ingestion.config import PipelineConfig
-from kb_ingestion.pipeline import IngestionPipeline, discover_files, extract_and_normalize
+from kb_ingestion.extractors.html_extractor import normalize_subdivision
+from kb_ingestion.pipeline import IngestionPipeline, discover_files
 
 from .keyword_index import KeywordHit, KeywordIndex
-from .track_mapping import TrackMapping
 
 logger = logging.getLogger(__name__)
+
+@dataclasses.dataclass(frozen=True)
+class Subdivision:
+    """One subdivision folder under data/track_data, as the UI lists it."""
+
+    id: str
+    name: str
+    chunks: int
+
+    @property
+    def label(self) -> str:
+        return f"{self.id} {self.name}".strip()
 
 
 class _StaticDocumentStore:
@@ -54,87 +66,34 @@ def _build_static_chunks(config: PipelineConfig) -> _StaticDocumentStore:
     return _StaticDocumentStore(chunk_ids, texts, metadatas)
 
 
-def _requirement_key(stem: str) -> str:
-    return stem.split("_", 1)[0].strip().upper()
-
-
-def _read_examples(config: PipelineConfig, max_chars: int) -> str:
-    examples_dir = config.examples_dir
-    if not examples_dir or not examples_dir.is_dir():
-        return ""
-
-    requirement_texts: dict[str, Path] = {}
-    for path in sorted(examples_dir.glob("*.txt")):
-        requirement_texts[_requirement_key(path.stem)] = path
-
-    test_case_files: dict[str, Path] = {}
-    for path in sorted((examples_dir / "reference_test_cases").glob("*.xlsx")):
-        test_case_files[_requirement_key(path.stem)] = path
-
-    script_files: dict[str, Path] = {}
-    for path in sorted((examples_dir / "reference_test_scripts").glob("*.txt")):
-        script_files[_requirement_key(path.stem)] = path
-
-    requirement_ids = sorted(
-        set(requirement_texts) | set(test_case_files) | set(script_files)
-    )
-
-    blocks: list[str] = []
-    for requirement_id in requirement_ids:
-        sections = [f"### Example: {requirement_id}"]
-        if requirement_id in requirement_texts:
-            sections.append("Requirement:\n" + _joined_text(requirement_texts[requirement_id], config))
-        if requirement_id in test_case_files:
-            sections.append(
-                "Reference test case(s):\n" + _joined_text(test_case_files[requirement_id], config)
-            )
-        if requirement_id in script_files:
-            sections.append(
-                "Reference script:\n" + _joined_text(script_files[requirement_id], config)
-            )
-        blocks.append((requirement_id, "\n\n".join(sections)))
-
-    # Every one of these examples goes into every request in full — there's
-    # no ranking or per-request selection, since none of them is "more
-    # relevant" to a requirement they weren't written for. But "in full"
-    # still has to leave room for the system prompt and the retrieved KB/
-    # track context inside llm_num_ctx: if the combined prompt overruns it,
-    # Ollama truncates from the front, and the model loses the JSON-format
-    # instructions before it ever sees the requirement. So whole blocks are
-    # kept, in order, up to the budget — never sliced mid-block, which would
-    # hand the model a corrupt example to imitate — and the rest are simply
-    # left out of this request rather than crammed in truncated.
-    separator = "\n\n---\n\n"
-    included: list[str] = []
-    skipped: list[str] = []
-    total = 0
-    for requirement_id, block in blocks:
-        addition = len(block) + (len(separator) if included else 0)
-        if total + addition > max_chars:
-            skipped.append(requirement_id)
+def _list_subdivisions(store: _StaticDocumentStore) -> list[Subdivision]:
+    _ids, _texts, metadatas = store.get_all_documents()
+    counts: dict[str, int] = {}
+    names: dict[str, str] = {}
+    for metadata in metadatas:
+        if metadata.get("document_type") != "track_data":
             continue
-        included.append(block)
-        total += addition
+        subdivision = str(metadata.get("subdivision") or "").strip()
+        if not subdivision:
+            continue
+        counts[subdivision] = counts.get(subdivision, 0) + 1
+        # The HTML report carries the display name ("Ginger"); its XML sibling
+        # may not. Either file is enough to name the subdivision, so the first
+        # one that has it wins for the whole folder.
+        name = str(metadata.get("subdivision_name") or "").strip()
+        if name and not names.get(subdivision):
+            names[subdivision] = name
 
-    if skipped:
-        logger.warning(
-            "Examples budget (%d chars) only fit %d of %d example(s); left out %s. "
-            "Raise static_examples_max_chars in config/rag_config.yaml (mind llm_num_ctx) "
-            "to include more.",
-            max_chars,
-            len(included),
-            len(blocks),
-            ", ".join(skipped),
-        )
-    else:
-        logger.info("Loaded %d example(s) from %s (%d chars)", len(included), examples_dir, total)
-
-    return separator.join(included)
-
-
-def _joined_text(path: Path, config: PipelineConfig) -> str:
-    units = extract_and_normalize(path, config)
-    return "\n\n".join(u.text.strip() for u in units if u.text.strip())
+    found = [
+        Subdivision(id=subdivision, name=names.get(subdivision, ""), chunks=count)
+        for subdivision, count in sorted(counts.items())
+    ]
+    logger.info(
+        "Track data covers %d subdivision(s): %s",
+        len(found),
+        ", ".join(s.label for s in found) or "none",
+    )
+    return found
 
 
 def _format_hits(hits: list[KeywordHit]) -> str:
@@ -149,24 +108,35 @@ def _format_hits(hits: list[KeywordHit]) -> str:
 
 class StaticContextProvider:
     """python_apis and track_data, keyword-searched from an in-process BM25
-    index built straight off disk (never embedded, never in ChromaDB); the
-    Examples folder, always included in full as few-shot material.
+    index built straight off disk (never embedded, never in ChromaDB).
+
+    track_data is one folder per subdivision, each holding the HTML report and
+    its `-subdiv.xml` sibling; both are indexed and both are stamped with the
+    folder's subdivision, so filtering to a subdivision covers the pair.
+
+    `data/Examples/` is deliberately *not* loaded here. Sending those files
+    at request time cost ~8-10k characters of prompt on every generation —
+    all of it prefill, all of it identical from one request to the next —
+    to teach the model a shape that does not change. The shape has instead
+    been distilled by hand into the house wording pattern and house
+    skeleton in config/prompts.yaml. The folder stays in the repo as the
+    source those templates were derived from and the material to re-derive
+    them from when the house style changes; it is design-time input now,
+    not runtime input.
 
     Built once, at construction — same lifetime as the running backend
-    process. Restart the server to pick up edits to data/python_apis,
-    data/track_data, or data/Examples.
+    process. Restart the server to pick up edits to data/python_apis or
+    data/track_data.
     """
 
     def __init__(
         self,
         ingestion_config: PipelineConfig,
-        track_mapping: TrackMapping,
-        examples_max_chars: int = 8000,
     ):
         self._config = ingestion_config
-        self._track_mapping = track_mapping
-        self._keyword_index = KeywordIndex(_build_static_chunks(ingestion_config))
-        self.examples_context = _read_examples(ingestion_config, examples_max_chars)
+        store = _build_static_chunks(ingestion_config)
+        self._keyword_index = KeywordIndex(store)
+        self._subdivisions = _list_subdivisions(store)
 
     def api_context(self, query: str, top_k: int) -> str:
         if top_k <= 0:
@@ -176,21 +146,59 @@ class StaticContextProvider:
         )
         return _format_hits(hits)
 
-    def track_context(self, query: str, requirement_id: str | None, top_k: int) -> str:
-        if top_k <= 0:
-            return ""
-        selection = self._track_mapping.selection_for(requirement_id)
-        if not selection.enabled:
-            return ""
+    def track_context(
+        self,
+        query: str,
+        top_k: int,
+        subdivision: str | None,
+    ) -> str:
+        return self.track_context_for(query, top_k, subdivision)[0]
 
-        subdivisions = set(selection.subdivisions) if not selection.search_all else None
+    def track_context_for(
+        self,
+        query: str,
+        top_k: int,
+        subdivision: str | None,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Track context for the subdivision picked in the UI, plus which
+        subdivisions it was actually drawn from.
+
+        The picked subdivision is the only thing that decides this. There is
+        no requirement -> subdivision map any more: a stored map and a UI
+        picker are two answers to one question, and the one the user just
+        chose in front of the result has to win, so keeping both only created
+        a way for the control to appear to do nothing.
+
+        No subdivision means no track data, deliberately. Searching every
+        subdivision instead would let BM25 return blocks and mileposts
+        belonging to track this requirement is not tested on — a wrong value
+        that looks right, which is worse than the `# TODO:` the generator
+        writes when the track block is empty.
+
+        The caller gets the subdivisions back rather than re-deriving them,
+        because what was searched is reported in the UI and must be the same
+        set that produced these hits.
+        """
+        if top_k <= 0 or not subdivision:
+            return "", ()
+
+        chosen = normalize_subdivision(subdivision)
+        if not chosen:
+            return "", ()
 
         def predicate(metadata: dict[str, Any]) -> bool:
-            if metadata.get("document_type") != "track_data":
-                return False
-            if subdivisions is not None and metadata.get("subdivision") not in subdivisions:
-                return False
-            return True
+            return (
+                metadata.get("document_type") == "track_data"
+                and metadata.get("subdivision") == chosen
+            )
 
         hits = self._keyword_index.search(query, top_k, predicate=predicate)
-        return _format_hits(hits)
+        return _format_hits(hits), (chosen,)
+
+    @property
+    def subdivisions(self) -> list[Subdivision]:
+        """Every subdivision the static index actually holds track data for —
+        read off the indexed chunks rather than by listing the folder, so the
+        dropdown can only ever offer track the search can really return.
+        """
+        return self._subdivisions

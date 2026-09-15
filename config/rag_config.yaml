@@ -22,7 +22,7 @@ min_similarity: 0.0          # 0..1 dense cosine floor; 0 = keep everything
 max_context_chars: 7000      # cap on context text fed to the LLM
 
 # [] = search every ingested document_type. Track data is always filtered
-# separately, by the requirement -> subdivision map in track_mapping.yaml.
+# separately, by the subdivision picked in the UI.
 doc_types: []
 track_data_doc_type: track_data
 track_data_top_k: 4          # track-feature chunks added on top of top_k
@@ -34,49 +34,27 @@ static_api_top_k: 4          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-feature chunks per request (still
                               # filtered to the requirement's subdivisions)
 
-# Examples are included in full, unranked, on every request (see
-# examples_dir in config.yaml) — but "in full" still has to leave room
-# inside llm_num_ctx for the system prompt and the retrieved KB/track
-# context above. Whole example blocks are kept up to this many characters,
-# in order, and the rest are left out of that request rather than sliced
-# mid-block (a truncated example would corrupt what it's meant to teach).
-# If a warning names examples being dropped, either raise this (and check
-# it still fits llm_num_ctx) or trim data/Examples.
-static_examples_max_chars: 12000
+# data/Examples/ is no longer sent at request time — its shape is distilled
+# into the house wording pattern and house skeleton in config/prompts.yaml,
+# so there is no examples budget to set here any more.
 
 # --- Generation (Ollama) -------------------------------------------------
 ollama_host: http://localhost:11434
 llm_model: qwen2.5:7b
-llm_temperature: 0.2
+llm_temperature: 0.1
 llm_top_p: 0.9
 llm_max_tokens: 1280
 llm_num_ctx: 16384
-llm_request_timeout_seconds: 900
-# Keeps the model resident between requests. A 7B model on CPU takes tens
-# of seconds to load; without this, every request pays that cost again.
+llm_request_timeout_seconds: 0
+llm_stall_timeout_seconds: 0
 llm_keep_alive: 30m
-# 0 = let Ollama pick. Set to your physical core count (not threads) if
-# generation is slower than expected.
 llm_num_threads: 0
-
-# How many test cases a requirement needs is derived from the requirement
-# itself — one per verifiable behaviour it specifies — so there is no target
-# count to configure. This is only the ceiling that stops a sprawling
-# requirement from asking for a response longer than llm_max_tokens can hold.
+llm_think: off
 max_test_cases: 20
-
-# --- Test-script generation ---------------------------------------------
-# The script call is a second, longer generation, so it gets its own budget.
 script_max_tokens: 1792
 
-# --- Confidence scoring --------------------------------------------------
-# Every generated test case gets three component scores, combined into one
-# overall score with these weights (normalised internally):
-#   retrieval  - how strong the supporting KB context was
-#   grounding  - how much of the test case's wording traces back to that
-#                context rather than being invented
-#   similarity - cosine similarity of the generated test case against the
-#                closest existing test case for the same requirement
+
+
 confidence_weights:
   retrieval: 0.3
   grounding: 0.3

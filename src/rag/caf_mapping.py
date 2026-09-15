@@ -41,7 +41,7 @@ class CafMapping:
     That keeps a request-time lookup to a small, dependency-free JSON parse
     instead of an openpyxl workbook read, and makes the mapping a normal
     config file: diffable, and reloadable without a restart the same way
-    `config/track_mapping.yaml` is.
+    `config/caf_mapping.json` is.
 
     Whenever `data/CAF.xlsx` changes, re-run the conversion script — this
     class does not watch the workbook, only the JSON file it produces.

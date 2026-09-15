@@ -32,7 +32,7 @@ class TestCaseOut(BaseModel):
     test_type: str = "Positive"
     test_technique: str = "Equivalence Partitioning"
     retired: str = "False"
-    scorable: str = "Yes"
+    scorable: str = "No"
     comments: str = ""
     confidence: ConfidenceOut = Field(default_factory=ConfidenceOut)
 
@@ -94,6 +94,12 @@ class GenerateTestCasesRequest(BaseModel):
     requirement_text: str = Field(min_length=1)
     top_k: int | None = Field(default=None, ge=1, le=50)
     doc_types: list[str] | None = None
+    # The subdivision folder under data/track_data to draw track values
+    # from, as picked in the UI. This is the only thing that selects track
+    # data; None means no track data is sent to the model at all, which is
+    # deliberately preferred over searching every subdivision and risking
+    # values from track the requirement is not tested on.
+    subdivision: str | None = None
     # Set by a caller that wants the model re-run rather than the previous
     # identical result replayed. The UI does not expose it; it exists so a
     # cached answer is never the only answer available.
@@ -140,6 +146,9 @@ class GenerateScriptRequest(BaseModel):
     # The reviewed rows, not the ones first generated — the script is written
     # against whatever the user actually kept.
     test_cases: list[TestCaseOut] = Field(min_length=1)
+    # Sent back unchanged from the datasheet request, so the script's track
+    # values come from the same subdivision its test cases were written for.
+    subdivision: str | None = None
 
 
 class GenerateScriptResponse(BaseModel):
@@ -165,10 +174,22 @@ class RequirementUploadResponse(BaseModel):
     requirement_id: str | None = None
 
 
+class SubdivisionOut(BaseModel):
+    """One entry in the UI's subdivision picker."""
+
+    id: str
+    name: str = ""
+    label: str = ""
+    chunks: int = 0
+
+
+class SubdivisionsResponse(BaseModel):
+    subdivisions: list[SubdivisionOut] = Field(default_factory=list)
+
+
 class HealthResponse(BaseModel):
     knowledge_base_chunks: int
     embedding_model: str
     llm_model: str
     llm_available: bool
-    mapped_requirements: list[str] = Field(default_factory=list)
     caf_mapped_requirements: int = 0

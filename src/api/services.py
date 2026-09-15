@@ -20,7 +20,6 @@ from rag.llm_client import OllamaClient
 from rag.prompts import PromptLibrary
 from rag.retriever import HybridRetriever
 from rag.static_context import StaticContextProvider
-from rag.track_mapping import TrackMapping
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,6 @@ class Services:
             self.settings.generation.ollama_host = os.environ["OLLAMA_HOST"]
 
         self.prompts = PromptLibrary(repo_root / "config" / "prompts.yaml")
-        self.track_mapping = TrackMapping(repo_root / "config" / "track_mapping.yaml")
         self.ingestion_config = PipelineConfig.load(repo_root / "config" / "config.yaml")
         # Requirement -> feature (the datasheet's Folder column). Cheap
         # enough to build eagerly: one small workbook, read on demand and
@@ -131,7 +129,6 @@ class Services:
                         embedder=self.embedder,
                         vector_store=self.vector_store,
                         config=self.settings.retrieval,
-                        track_mapping=self.track_mapping,
                         keyword_index=self.keyword_index,
                     )
         return self._retriever
@@ -141,11 +138,7 @@ class Services:
         if self._static_context is None:
             with self._lock:
                 if self._static_context is None:
-                    self._static_context = StaticContextProvider(
-                        self.ingestion_config,
-                        self.track_mapping,
-                        examples_max_chars=self.settings.retrieval.static_examples_max_chars,
-                    )
+                    self._static_context = StaticContextProvider(self.ingestion_config)
         return self._static_context
 
     @property

@@ -109,24 +109,21 @@ stamped with a `document_type` taken from its root; set
 overrides it, which is how `knowledge_base/reference_test_cases/` becomes its
 own filterable type without a code change.
 
-### Track data is mapped, not searched blindly
+### Track data is picked, not searched blindly
 
 Each subdivision report lists thousands of track features. Searching all of
 them for every requirement drowns retrieval in track the requirement isn't
-tested on, so `config/track_mapping.yaml` says which subdivisions a
-requirement applies to:
+tested on, so the subdivision is chosen explicitly in the UI (its list comes
+from `GET /api/track-subdivisions`, read off the built static index so it can
+only offer track that actually parsed). That choice is the only thing that
+selects track data, and it is required before generating; the same value is
+sent again with the script call so the script's hard-coded blocks match its
+datasheet's.
 
-```yaml
-mappings:
-  L2R9479: ["08880"]
-  L2R7983: ["08101"]
-unmapped: exclude     # or `all`
-```
-
-`8880` and `08880` both work, and `L2R9479_A` falls back to `L2R9479`. A
-requirement with no row gets no track data at all (`exclude`). Track data is
-retrieved in its own filtered pass and appended after the general results, so
-it can never crowd out requirement prose on score alone.
+A request that somehow arrives without one gets no track data rather than a
+search across every subdivision — a block or milepost from the wrong track
+looks right and is wrong, which is worse than the `# TODO:` placeholder the
+model writes when the track block is empty.
 
 ## How chunking preserves structure
 
@@ -281,7 +278,6 @@ edit.
 | `config/config.yaml` | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
 | `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
 | `config/prompts.yaml` | Every system and user prompt |
-| `config/track_mapping.yaml` | Requirement → subdivision |
 | `.env` | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target |
 
 ## Layout
@@ -300,7 +296,6 @@ src/kb_ingestion/
   pipeline.py               orchestration
 src/rag/
   requirement_parser.py     requirement ID + functional area
-  track_mapping.py          requirement → subdivision
   keyword_index.py          BM25 arm
   retriever.py              hybrid search + RRF + context assembly
   cache.py                  embedding / result caches

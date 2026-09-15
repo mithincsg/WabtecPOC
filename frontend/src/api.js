@@ -45,19 +45,34 @@ export function lookupFolder({ requirementText, signal }) {
 // No test-case count is sent: how many cases a requirement needs is derived
 // from the requirement itself, server-side. `refresh` asks the server to run
 // the model again instead of replaying an identical earlier result.
-export function generateTestCases({ requirementText, topK, refresh = false }) {
+export function generateTestCases({ requirementText, topK, subdivision, refresh = false }) {
   return json("/test-cases", {
     requirement_text: requirementText,
     top_k: topK,
+    // null, not "", for "no subdivision chosen" — the backend reads null as
+    // "send no track data". The UI requires a pick, so this is a guard
+    // rather than a normal path.
+    subdivision: subdivision || null,
     refresh,
   });
 }
 
-export function generateTestScript({ requirementText, testCases }) {
+// The subdivision goes with the script call too: the script hard-codes blocks
+// and mileposts, so it has to read the same track the datasheet was written
+// against rather than resolving the requirement's track a second time.
+export function generateTestScript({ requirementText, testCases, subdivision }) {
   return json("/test-script", {
     requirement_text: requirementText,
     test_cases: testCases,
+    subdivision: subdivision || null,
   });
+}
+
+// The subdivisions data/track_data actually holds indexed track data for.
+export async function fetchSubdivisions() {
+  const response = await request("/track-subdivisions");
+  const body = await response.json();
+  return body.subdivisions ?? [];
 }
 
 export async function uploadRequirement(file) {

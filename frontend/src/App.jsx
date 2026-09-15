@@ -3,6 +3,7 @@ import {
   downloadTestCases,
   downloadTestScript,
   fetchHealth,
+  fetchSubdivisions,
   generateTestCases,
   generateTestScript,
   lookupFolder,
@@ -72,10 +73,19 @@ export default function App() {
   const [requirementNumber, setRequirementNumber] = useState("");
   const [requirementText, setRequirementText] = useState("");
   const [uploadedName, setUploadedName] = useState("");
+  // Which track_data subdivision to draw block/milepost/signal values from.
+  // This picker is the only thing that selects track data — there is no
+  // requirement -> subdivision map behind it any more — so a choice is
+  // required before generating.
+  const [subdivision, setSubdivision] = useState("");
+  const [subdivisions, setSubdivisions] = useState([]);
   // Only start showing the Requirement No validation once the user has
   // tried to generate with it empty — flagging it red before they've typed
   // anything would just look broken.
   const [requirementNumberTouched, setRequirementNumberTouched] = useState(false);
+  // Same treatment for the subdivision: only flag it once they've tried to
+  // generate without one.
+  const [subdivisionTouched, setSubdivisionTouched] = useState(false);
 
   const [result, setResult] = useState(null);
   const [script, setScript] = useState(null);
@@ -90,6 +100,12 @@ export default function App() {
     fetchHealth()
       .then(setHealth)
       .catch(() => setHealth(null));
+    // An empty list is a valid answer (no track data ingested yet), so a
+    // failure here leaves the picker showing only "Use requirement mapping"
+    // rather than blocking generation.
+    fetchSubdivisions()
+      .then(setSubdivisions)
+      .catch(() => setSubdivisions([]));
   }, []);
 
   async function run(kind, action) {
@@ -140,15 +156,20 @@ export default function App() {
   }
 
   async function onGenerateTestCases({ refresh = false } = {}) {
-    if (!requirementNumber.trim()) {
+    if (!requirementNumber.trim() || !subdivision) {
       setRequirementNumberTouched(true);
+      setSubdivisionTouched(true);
       return;
     }
     // A new set of test cases invalidates any script written from the old
     // ones, so it's cleared rather than left to be downloaded by mistake.
     setScript(null);
     const generated = await run("cases", () =>
-      generateTestCases({ requirementText: composedRequirementText(), refresh })
+      generateTestCases({
+        requirementText: composedRequirementText(),
+        subdivision,
+        refresh,
+      })
     );
     if (generated) setResult(generated);
   }
@@ -158,6 +179,7 @@ export default function App() {
       generateTestScript({
         requirementText: composedRequirementText(),
         testCases: result.test_cases,
+        subdivision,
       })
     );
     if (generated) setScript(generated);
@@ -166,8 +188,12 @@ export default function App() {
   const hasTestCases = Boolean(result?.test_cases?.length);
   const generating = busy === "cases" || busy === "script";
   const requirementNumberMissing = requirementNumberTouched && !requirementNumber.trim();
+  const subdivisionMissing = subdivisionTouched && !subdivision;
   const canGenerate =
-    requirementNumber.trim().length > 0 && requirementText.trim().length > 0 && !busy;
+    requirementNumber.trim().length > 0 &&
+    requirementText.trim().length > 0 &&
+    subdivision.length > 0 &&
+    !busy;
 
   return (
     <div className="app">
@@ -249,6 +275,42 @@ export default function App() {
               placeholder={"15 Speed Enforcement\n\nThe onboard shall …"}
               spellCheck="false"
             />
+          </div>
+
+          <div className="field">
+            <label htmlFor="subdivision">Subdivision</label>
+            <p className="help">
+              Which track under <code>data/track_data/</code> the blocks, mileposts,
+              signals and switches should come from. Required — without it the
+              model gets no track data and writes TODO placeholders instead of
+              values.
+            </p>
+            <select
+              id="subdivision"
+              className={subdivisionMissing ? "invalid" : ""}
+              value={subdivision}
+              onChange={(event) => {
+                setSubdivision(event.target.value);
+                if (event.target.value) setSubdivisionTouched(false);
+              }}
+              aria-invalid={subdivisionMissing}
+            >
+              <option value="">Select a subdivision…</option>
+              {subdivisions.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label || entry.id}
+                </option>
+              ))}
+            </select>
+            {subdivision ? (
+              <p className="help">
+                Track values will come only from{" "}
+                <b>{subdivisions.find((e) => e.id === subdivision)?.label || subdivision}</b>.
+              </p>
+            ) : null}
+            {subdivisionMissing ? (
+              <p className="field-error">Subdivision is required.</p>
+            ) : null}
           </div>
 
           <label className="file-drop">

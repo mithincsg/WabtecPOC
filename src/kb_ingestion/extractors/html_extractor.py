@@ -125,9 +125,11 @@ def _rows_to_text(rows: list[list[str]]) -> str:
 
 
 class HTMLTrackDataExtractor:
-    """Wabtec 'HTML Track by Group' subdivision reports (paired with a
-    machine-serialized `-subdiv.xml`, which has no descriptive labels and is
-    intentionally not ingested). Preserves the real hierarchy: subdivision
+    """Wabtec 'HTML Track by Group' subdivision reports — the readable half
+    of a subdivision export, indexed alongside the machine-serialized
+    `-subdiv.xml` in the same folder (see xml_extractor.py: the report is
+    grouped and labelled, the XML carries fields the report never prints).
+    Preserves the real hierarchy: subdivision
     -> named section (Blocks, Switches, Signals, Speed Restrictions, ...) ->
     track-feature records. Each section becomes one ExtractedUnit
     (unit_type="table") - identical shape to a PDF table unit, so it flows
@@ -160,7 +162,7 @@ class HTMLTrackDataExtractor:
                         "table_title": section_name,
                         "table": index,
                         # Filterable on its own, so the requirement ->
-                        # subdivision map in config/track_mapping.yaml can
+                        # subdivision picked in the UI can
                         # restrict retrieval to the track a requirement is
                         # actually tested on.
                         "subdivision": subdivision,
@@ -175,11 +177,18 @@ def _subdivision_id(raw_html: str, file_path: Path) -> str:
     """The subdivision's numeric ID, normalised to the zero-padded form used
     in filenames and the track map ("08880").
 
-    Tried in order of reliability: the body line that states it, the document
-    title, then the filename. Any of the three alone can be missing or
-    reformatted by whoever exported the report, so all three are checked
-    rather than assuming a single layout.
+    The containing folder wins when there is one: track data is filed as
+    `data/track_data/<subdivision>/`, and that folder is what the UI's
+    subdivision picker lists, so a report filed under 08101 must be findable
+    under 08101 even if whoever exported it left a different ID in the body.
+    Failing that, tried in order of reliability: the body line that states it,
+    the document title, then the filename — any one of those can be missing or
+    reformatted, so all are checked rather than assuming a single layout.
     """
+    from_folder = subdivision_from_folder(file_path)
+    if from_folder:
+        return from_folder
+
     for pattern, source in (
         (_SUBDIVISION_ID_RE, raw_html),
         (_TITLE_ID_RE, raw_html),
@@ -189,6 +198,20 @@ def _subdivision_id(raw_html: str, file_path: Path) -> str:
         if match:
             return normalize_subdivision(match.group(1))
     return file_path.stem
+
+
+def subdivision_from_folder(file_path: Path) -> str:
+    """The subdivision ID from the folder a track file sits in, or "" if that
+    folder isn't named after one.
+
+    Track data is organised one folder per subdivision
+    (`data/track_data/08101/08101.803.html`, `.../08101-subdiv.xml`), which
+    makes the folder the single most reliable statement of which subdivision a
+    file belongs to — and the one thing the HTML report and its XML sibling
+    are guaranteed to agree on.
+    """
+    name = file_path.parent.name.strip()
+    return normalize_subdivision(name) if name.isdigit() else ""
 
 
 def normalize_subdivision(value: str) -> str:

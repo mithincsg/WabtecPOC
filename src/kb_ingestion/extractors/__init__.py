@@ -35,6 +35,7 @@ from .pdf_extractor import PDFExtractor  # noqa: E402
 from .python_extractor import PythonExtractor  # noqa: E402
 from .text_extractor import TextExtractor  # noqa: E402
 from .xlsx_extractor import XLSXExtractor  # noqa: E402
+from .xml_extractor import XMLTrackDataExtractor  # noqa: E402
 
 _python_extractor = PythonExtractor()
 _xlsx_extractor = XLSXExtractor()
@@ -51,6 +52,9 @@ EXTRACTORS_BY_SUFFIX: dict[str, Extractor] = {
     ".txt": TextExtractor(),
     ".html": HTMLTrackDataExtractor(),
     ".htm": HTMLTrackDataExtractor(),
+    # The `-subdiv.xml` filed next to each track report. Same subdivision,
+    # different half of the export.
+    ".xml": XMLTrackDataExtractor(),
 }
 
 __all__ = [
@@ -58,6 +62,7 @@ __all__ = [
     "ExtractedUnit",
     "Extractor",
     "HTMLTrackDataExtractor",
+    "XMLTrackDataExtractor",
     "PDFExtractor",
     "PythonExtractor",
     "TextExtractor",

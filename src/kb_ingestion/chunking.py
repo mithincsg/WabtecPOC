@@ -357,6 +357,10 @@ class ChunkMetadata:
     # Track-data only: which subdivision report this chunk came from, so
     # retrieval can be restricted to the track a requirement is tested on.
     subdivision: str | None = None
+    # The subdivision's display name ("Ginger"). Not searched or filtered on —
+    # it is how the UI's subdivision picker labels an otherwise bare five-digit
+    # ID, so it has to survive as metadata rather than only inside section_path.
+    subdivision_name: str | None = None
 
     def to_chroma_dict(self) -> dict[str, Any]:
         """Chroma metadata values must be str/int/float/bool - drop Nones
@@ -421,4 +425,5 @@ def build_metadata(
         table_index=locator.get("table"),
         table_title=locator.get("table_title"),
         subdivision=locator.get("subdivision"),
+        subdivision_name=locator.get("subdivision_name"),
     )

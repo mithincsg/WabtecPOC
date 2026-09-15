@@ -33,6 +33,8 @@ from api.models import (  # noqa: E402
     HealthResponse,
     RequirementUploadResponse,
     RetrievedChunkOut,
+    SubdivisionOut,
+    SubdivisionsResponse,
     TestCaseOut,
 )
 from api.services import Services  # noqa: E402
@@ -152,7 +154,6 @@ def _health() -> HealthResponse:
         # Ollama reports tags as "qwen2.5:7b-instruct"; a config value
         # without the tag still refers to the same model.
         llm_available=any(m == configured or m.startswith(configured) for m in models),
-        mapped_requirements=services.track_mapping.known_requirement_ids,
         caf_mapped_requirements=len(services.caf_mapping.known_requirement_ids),
     )
 
@@ -211,6 +212,32 @@ async def lookup_folder(request: FolderLookupRequest) -> FolderLookupResponse:
     )
 
 
+@app.get("/api/track-subdivisions", response_model=SubdivisionsResponse)
+def list_track_subdivisions() -> SubdivisionsResponse:
+    """The subdivisions the UI can offer in its picker.
+
+    Read from the built static index rather than by listing data/track_data,
+    so the list can only contain subdivisions whose track data actually
+    parsed and got indexed — offering a folder whose files failed to parse
+    would produce a generation with silently empty track context.
+
+    Synchronous on purpose: this touches the static context, which builds the
+    whole BM25 corpus on first access. Left async it would block the event
+    loop for that build; as a plain `def` FastAPI runs it in a worker thread.
+    """
+    return SubdivisionsResponse(
+        subdivisions=[
+            SubdivisionOut(
+                id=subdivision.id,
+                name=subdivision.name,
+                label=subdivision.label,
+                chunks=subdivision.chunks,
+            )
+            for subdivision in services.static_context.subdivisions
+        ]
+    )
+
+
 @app.post("/api/test-cases", response_model=GenerateTestCasesResponse)
 async def generate_test_cases(
     request: GenerateTestCasesRequest,
@@ -224,6 +251,7 @@ async def generate_test_cases(
         request.requirement_text,
         request.top_k,
         request.doc_types,
+        request.subdivision,
         generation.model,
         generation.max_test_cases,
         services.prompt_revision(),
@@ -240,6 +268,7 @@ async def generate_test_cases(
             max_test_cases=generation.max_test_cases,
             doc_types=request.doc_types,
             top_k=request.top_k,
+            subdivision=request.subdivision,
         )
 
     try:
@@ -276,7 +305,7 @@ async def generate_test_script(request: GenerateScriptRequest) -> GenerateScript
     try:
         result = await _generate(
             lambda: services.script_generator.generate(
-                request.requirement_text, test_cases
+                request.requirement_text, test_cases, request.subdivision
             )
         )
     except (LLMConnectionError, LLMResponseError) as exc:
