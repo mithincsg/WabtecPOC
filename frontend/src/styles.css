@@ -153,6 +153,30 @@ textarea {
   margin: 0;
 }
 
+.required {
+  color: var(--stop);
+}
+
+.requirement-no-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+}
+
+.requirement-no-input.invalid {
+  border-color: var(--stop);
+  background: var(--stop-wash);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--stop);
+  font-size: 0.75rem;
+}
+
 textarea {
   min-height: 17rem;
   padding: 0.625rem 0.75rem;
@@ -195,6 +219,44 @@ summary:focus-visible {
   width: 1px;
   height: 1px;
   opacity: 0;
+}
+
+/* --- mapped folder ----------------------------------------------------- */
+
+/* The feature the requirement maps to, resolved from the Change Approval
+   Form while the user is still typing. Sits directly under the requirement
+   box because it is a readback of what was typed there, and it is the value
+   the datasheet's Folder column will carry. */
+.folder-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--clear);
+  background: var(--clear-wash);
+}
+
+.folder-card.unmapped {
+  border-left-color: var(--approach);
+  background: var(--approach-wash);
+}
+
+.folder-req {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.folder-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.folder-note {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
 }
 
 /* --- buttons ---------------------------------------------------------- */

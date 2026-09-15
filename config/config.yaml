@@ -46,6 +46,15 @@ static_sources:
 # reason to rank or budget it.
 examples_dir: data/Examples
 
+# Requirement -> feature mapping (the datasheet's `Folder` column), read
+# from this JSON file rather than from data/CAF.xlsx directly — it is
+# authoritative: the folder is looked up per requirement rather than
+# embedded, searched or left to the model. config/caf_mapping.json is
+# generated from data/CAF.xlsx by `python scripts/convert_caf_mapping.py`;
+# re-run that script whenever the workbook changes. See
+# src/rag/caf_mapping.py.
+caf_mapping_file: config/caf_mapping.json
+
 # --- Chunking ------------------------------------------------------------
 #
 # Structure decides the boundaries; these are only a ceiling. A PDF section,

@@ -28,6 +28,13 @@ class RetrievalConfig:
 
     static_api_top_k: int = 4
     static_track_top_k: int = 4
+    # Examples are always included in full for every generation, unlike
+    # everything else here — but "in full" still has to fit inside
+    # llm_num_ctx alongside the system prompt and the retrieved KB/track
+    # context, or Ollama silently truncates the prompt from the front and
+    # the model loses the JSON-format instructions entirely. Whole example
+    # blocks are kept (never sliced mid-block) up to this many characters.
+    static_examples_max_chars: int = 8000
 
 
 @dataclass
@@ -78,6 +85,7 @@ _RETRIEVAL_KEYS = {
     "track_data_top_k": "track_data_top_k",
     "static_api_top_k": "static_api_top_k",
     "static_track_top_k": "static_track_top_k",
+    "static_examples_max_chars": "static_examples_max_chars",
 }
 _GENERATION_KEYS = {
     "ollama_host": "ollama_host",

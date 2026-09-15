@@ -71,6 +71,16 @@ fingerprint and re-embeds the whole KB once. Only `sources:` in
 `config/config.yaml` is affected — `static_sources:` (python_apis, track_data)
 is read fresh from disk on every server start, not ingested.
 
+Update the requirement -> feature (Folder) mapping after editing `data/CAF.xlsx`:
+
+```bash
+python scripts/convert_caf_mapping.py       # data/CAF.xlsx -> config/caf_mapping.json
+```
+
+The app reads `config/caf_mapping.json`, not the workbook, so this must be
+re-run for a workbook edit to take effect; the app then picks up the
+regenerated JSON on its next request, no restart needed.
+
 Run the backend:
 
 ```bash
@@ -149,10 +159,54 @@ fallback. `8880`/`08880` both work, and `L2R9479_A` falls back to `L2R9479`.
 
 `data/Examples/` (config `examples_dir`) holds requirement → reference test
 cases → reference script triples for a handful of other requirements, always
-included in full for every generation request — not searched, not budgeted,
-small enough that ranking would add nothing. They exist to fix the *shape*
-of the output (datasheet phrasing, script layout, naming style), never to
-supply values: see "Examples are templates, never a source of values" below.
+included for every generation request — not searched or ranked, since none
+of them is "more relevant" to a requirement they weren't written for. They
+exist to fix the *shape* of the output (datasheet phrasing, script layout,
+naming style), never to supply values: see "Examples are templates, never a
+source of values" below.
+
+Whole example blocks (never sliced mid-block, which would hand the model a
+corrupt example to imitate) are kept up to `static_examples_max_chars` in
+`config/rag_config.yaml`, in order, and the rest are left out of that
+request — because "included in full" still has to leave room inside
+`llm_num_ctx` for the system prompt and the retrieved KB/track context
+alongside them. If it doesn't, Ollama truncates the prompt from the front,
+and the model loses the JSON-format instructions before it ever reaches the
+requirement — surfacing as `TestCaseParseError: The model's JSON had no
+non-empty 'test_cases' list.` even though the model itself is working fine.
+A log line names any requirement whose example got left out for this
+reason; raise `static_examples_max_chars` (checking it still fits
+`llm_num_ctx`) or trim `data/Examples/` if that happens often.
+
+### Requirement -> folder mapping (`src/rag/caf_mapping.py`)
+
+`data/CAF.xlsx` (the Change Approval Form export: `Sr No`, `Section`,
+`Feature`, `Requirement No`) is the source of the datasheet's `Folder`
+column, but the running app never reads that workbook directly. Instead:
+
+```bash
+python scripts/convert_caf_mapping.py   # data/CAF.xlsx -> config/caf_mapping.json
+```
+
+converts it once into `config/caf_mapping.json` (path in
+`config/config.yaml`'s `caf_mapping_file`) — `{"requirements": {"<ID>":
+{"feature": ..., "section": ...}}}` — and `CafMapping` only ever loads that
+JSON file. A feature is written once against the first requirement it
+covers and left blank below in the workbook, so the conversion carries the
+value down; lookups are case- and whitespace-insensitive, and `L2R8279_A`
+falls back to `L2R8279`. Re-run the conversion script whenever `data/CAF.xlsx`
+changes — the app is not watching the workbook, only the JSON file the
+script produces, which it re-reads whenever that file's mtime changes (no
+restart, no ingestion).
+
+When the mapping covers a requirement, that feature is what every generated
+row's `Folder` carries — the value overwrites whatever the model wrote
+rather than just seeding it, so the same requirement always lands in the
+same folder. The functional area read out of the requirement heading
+(`requirement_parser.py`) is only the fallback for a requirement the mapping
+doesn't cover yet. `POST /api/requirements/folder` resolves it through the
+same call without touching the model, so the UI shows the folder under the
+requirement box as soon as the requirement number is typed.
 
 ### Hybrid retrieval (`src/rag/retriever.py`, `keyword_index.py`)
 
@@ -264,6 +318,7 @@ config — no code change needed for any of these.
 | `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits, `max_test_cases` ceiling, confidence weights/threshold |
 | `config/prompts.yaml` | Every system and user prompt |
 | `config/track_mapping.yaml` | Requirement → subdivision mapping |
+| `config/caf_mapping.json` | Requirement → feature, i.e. the datasheet's `Folder` column — generated from `data/CAF.xlsx` by `scripts/convert_caf_mapping.py` |
 | `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, `RAG_RETRIEVAL_WORKERS`, Ollama host override, frontend dev-server port/proxy target |
 
 Prefer adding new behavior-affecting knobs to `config/*.yaml`, and new
@@ -278,7 +333,8 @@ or generation pipeline.
 
 ### API routes (`src/api/main.py`)
 
-`GET /api/health`, `POST /api/requirements/upload`, `POST /api/test-cases`
+`GET /api/health`, `POST /api/requirements/upload`,
+`POST /api/requirements/folder` (CAF folder lookup, no model), `POST /api/test-cases`
 (datasheet generation), `POST /api/test-script` (script generation, second
 LLM call), `POST /api/test-cases/export` and `POST /api/test-script/export`
 (`.xlsx`/`.txt` downloads). `services.py` wires the shared retriever/generator
@@ -287,11 +343,13 @@ instances; `models.py` holds the request/response schemas.
 ### Layout
 
 ```
-config/                     config.yaml, rag_config.yaml, prompts.yaml, track_mapping.yaml
+config/                     config.yaml, rag_config.yaml, prompts.yaml, track_mapping.yaml, caf_mapping.json
 data/knowledge_base/         PDF · XLSX · TXT (embedded)
 data/python_apis/            PY · PYI (static, BM25-only)
 data/track_data/              HTML (static, BM25-only)
 data/Examples/               requirement -> reference test cases -> reference script triples
+data/CAF.xlsx                requirement -> feature (Folder) source; converted, not read at request time
+scripts/convert_caf_mapping.py   data/CAF.xlsx -> config/caf_mapping.json
 src/kb_ingestion/
   extractors/                 one parser per format (pdf, xlsx, python, html, text)
   chunking.py                 normalisation, token budgets, chunk metadata
@@ -301,6 +359,7 @@ src/kb_ingestion/
   pipeline.py                   orchestration
 src/rag/
   requirement_parser.py        requirement ID + functional area
+  caf_mapping.py                requirement -> feature (the Folder column), from config/caf_mapping.json
   track_mapping.py              requirement -> subdivision
   static_context.py             python_apis/track_data/Examples, BM25-only, never embedded
   keyword_index.py               BM25 arm over the embedded collection

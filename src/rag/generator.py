@@ -4,6 +4,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from .caf_mapping import CafMapping
 from .confidence import ConfidenceScorer
 from .llm_client import LLMClient
 from .prompts import PromptLibrary
@@ -32,6 +33,11 @@ class TestCaseResult:
     test_cases: list[TestCase]
     retrieved_chunks: list[RetrievedChunk]
     raw_response: str
+    # The datasheet's Folder column for every row of this result, and where
+    # it came from ("caf" when the Change Approval Form mapped it, "heading"
+    # when it was read out of the requirement text, "" when neither).
+    folder: str = ""
+    folder_source: str = ""
     track_subdivisions: list[str] = field(default_factory=list)
     elapsed_seconds: float = 0.0
 
@@ -64,6 +70,7 @@ class TestCaseGenerator:
         scorer: ConfidenceScorer,
         static_context: StaticContextProvider | None = None,
         static_track_top_k: int = 4,
+        caf_mapping: CafMapping | None = None,
     ):
         self.retriever = retriever
         self.llm_client = llm_client
@@ -71,6 +78,7 @@ class TestCaseGenerator:
         self.scorer = scorer
         self.static_context = static_context
         self.static_track_top_k = static_track_top_k
+        self.caf_mapping = caf_mapping
 
     def generate(
         self,
@@ -88,6 +96,7 @@ class TestCaseGenerator:
         """
         started = time.monotonic()
         parsed = parse_requirement(requirement_text)
+        folder, folder_source = self.resolve_folder(parsed.requirement_id, parsed.functional_area)
 
         retrieval = self.retriever.retrieve(
             parsed.query_text,
@@ -109,7 +118,7 @@ class TestCaseGenerator:
             requirement_text=parsed.raw_text.strip(),
             context=context,
             max_test_cases=str(max_test_cases),
-            folder_hint=_folder_hint(parsed),
+            folder_hint=_folder_hint(folder, folder_source),
             columns=", ".join(label for _, label in _column_labels()),
         )
 
@@ -117,20 +126,34 @@ class TestCaseGenerator:
         test_cases = parse_test_cases(
             raw_response,
             requirement_id=parsed.requirement_id or "",
-            default_folder=parsed.functional_area or "",
+            default_folder=folder,
         )
+
+        if folder_source == "caf":
+            # The Change Approval Form is the authority on which feature a
+            # requirement belongs to, so its value replaces whatever the
+            # model wrote rather than merely seeding it.
+            for test_case in test_cases:
+                test_case.folder = folder
 
         self.scorer.score(test_cases, retrieval.chunks, parsed.requirement_id)
 
         return TestCaseResult(
             requirement_id=parsed.requirement_id,
             functional_area=parsed.functional_area,
+            folder=folder,
+            folder_source=folder_source,
             test_cases=test_cases,
             retrieved_chunks=retrieval.chunks,
             raw_response=raw_response,
             track_subdivisions=list(retrieval.track_selection.subdivisions),
             elapsed_seconds=round(time.monotonic() - started, 1),
         )
+
+    def resolve_folder(
+        self, requirement_id: str | None, functional_area: str | None
+    ) -> tuple[str, str]:
+        return resolve_folder(self.caf_mapping, requirement_id, functional_area)
 
     def _static_track_context(self, parsed: ParsedRequirement) -> str:
         if self.static_context is None:
@@ -235,11 +258,43 @@ def _append_static_context(context: str, *extra_blocks: str) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def _folder_hint(parsed: ParsedRequirement) -> str:
-    if not parsed.functional_area:
+def resolve_folder(
+    caf_mapping: CafMapping | None,
+    requirement_id: str | None,
+    functional_area: str | None,
+) -> tuple[str, str]:
+    """The datasheet's Folder for a requirement, and where it came from.
+
+    The Change Approval Form wins when it has a row for the requirement: it
+    is the maintained list of which feature each requirement belongs to, so
+    it keeps the folder stable across runs. The heading read out of the
+    pasted requirement text is only the fallback for a requirement the form
+    doesn't cover yet.
+
+    A free function, not just a generator method, because the API's folder
+    lookup answers on every keystroke and must not pull in the generator —
+    and with it the embedding model — to do it. Generation resolves the
+    folder through the same call, so what the UI shows before generating is
+    what the rows and the exported spreadsheet will carry.
+    """
+    caf_folder = caf_mapping.folder_for(requirement_id) if caf_mapping else ""
+    if caf_folder:
+        return caf_folder, "caf"
+    if functional_area:
+        return functional_area, "heading"
+    return "", ""
+
+
+def _folder_hint(folder: str, folder_source: str) -> str:
+    if not folder:
         return ""
+    if folder_source == "caf":
+        # Mapped in the Change Approval Form, so there is nothing to weigh
+        # up: the row is overwritten with this value afterwards anyway, and
+        # saying so keeps the model from writing a different one.
+        return f'Use exactly "{folder}" as the folder for every row.'
     return (
-        f'Use "{parsed.functional_area}" as the folder unless the retrieved '
+        f'Use "{folder}" as the folder unless the retrieved '
         "test cases consistently use a different name for this area."
     )
 

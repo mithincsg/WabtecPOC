@@ -34,13 +34,23 @@ static_api_top_k: 4          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-feature chunks per request (still
                               # filtered to the requirement's subdivisions)
 
+# Examples are included in full, unranked, on every request (see
+# examples_dir in config.yaml) — but "in full" still has to leave room
+# inside llm_num_ctx for the system prompt and the retrieved KB/track
+# context above. Whole example blocks are kept up to this many characters,
+# in order, and the rest are left out of that request rather than sliced
+# mid-block (a truncated example would corrupt what it's meant to teach).
+# If a warning names examples being dropped, either raise this (and check
+# it still fits llm_num_ctx) or trim data/Examples.
+static_examples_max_chars: 12000
+
 # --- Generation (Ollama) -------------------------------------------------
 ollama_host: http://localhost:11434
 llm_model: qwen2.5:7b
 llm_temperature: 0.2
 llm_top_p: 0.9
 llm_max_tokens: 1280
-llm_num_ctx: 8192
+llm_num_ctx: 16384
 llm_request_timeout_seconds: 900
 # Keeps the model resident between requests. A 7B model on CPU takes tens
 # of seconds to load; without this, every request pays that cost again.

@@ -24,6 +24,8 @@ from fastapi.responses import Response  # noqa: E402
 from api.models import (  # noqa: E402
     ExportScriptRequest,
     ExportTestCasesRequest,
+    FolderLookupRequest,
+    FolderLookupResponse,
     GenerateScriptRequest,
     GenerateScriptResponse,
     GenerateTestCasesRequest,
@@ -36,6 +38,7 @@ from api.models import (  # noqa: E402
 from api.services import Services  # noqa: E402
 from rag.cache import stable_key  # noqa: E402
 from rag.exporters import datasheet_to_xlsx, download_name, script_to_text  # noqa: E402
+from rag.generator import resolve_folder  # noqa: E402
 from rag.llm_client import LLMConnectionError, LLMResponseError  # noqa: E402
 from rag.prompts import PromptError  # noqa: E402
 from rag.requirement_parser import parse_requirement  # noqa: E402
@@ -150,6 +153,7 @@ def _health() -> HealthResponse:
         # without the tag still refers to the same model.
         llm_available=any(m == configured or m.startswith(configured) for m in models),
         mapped_requirements=services.track_mapping.known_requirement_ids,
+        caf_mapped_requirements=len(services.caf_mapping.known_requirement_ids),
     )
 
 
@@ -180,6 +184,30 @@ async def upload_requirement(file: UploadFile = File(...)) -> RequirementUploadR
         filename=file.filename or "requirement.txt",
         requirement_text=text,
         requirement_id=parse_requirement(text).requirement_id,
+    )
+
+
+@app.post("/api/requirements/folder", response_model=FolderLookupResponse)
+async def lookup_folder(request: FolderLookupRequest) -> FolderLookupResponse:
+    """The feature a requirement belongs to, from data/CAF.xlsx.
+
+    Answered on its own so the UI can show the folder as soon as the
+    requirement number is typed — minutes before a generation would reveal
+    it. It resolves the folder through the same call the generator uses, so
+    what is shown here is what the generated rows and the exported
+    spreadsheet's `Folder` column will contain.
+    """
+    parsed = parse_requirement(request.requirement_text)
+    requirement_id = parsed.requirement_id
+    entry = services.caf_mapping.entry_for(requirement_id)
+    folder, folder_source = resolve_folder(
+        services.caf_mapping, requirement_id, parsed.functional_area
+    )
+    return FolderLookupResponse(
+        requirement_id=requirement_id,
+        folder=folder,
+        folder_source=folder_source,
+        section=entry.section if entry else "",
     )
 
 
@@ -228,6 +256,8 @@ async def generate_test_cases(
     response = GenerateTestCasesResponse(
         requirement_id=result.requirement_id,
         functional_area=result.functional_area,
+        folder=result.folder,
+        folder_source=result.folder_source,
         test_cases=[TestCaseOut.from_domain(tc) for tc in result.test_cases],
         retrieved=[_chunk_out(c) for c in result.retrieved_chunks],
         track_subdivisions=result.track_subdivisions,

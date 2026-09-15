@@ -20,8 +20,9 @@ async function request(path, options = {}) {
   throw new Error(detail);
 }
 
-async function json(path, body) {
+async function json(path, body, options = {}) {
   const response = await request(path, {
+    ...options,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -32,6 +33,13 @@ async function json(path, body) {
 export async function fetchHealth() {
   const response = await request("/health");
   return response.json();
+}
+
+// The feature (datasheet "Folder") the requirement belongs to, from the
+// Change Approval Form workbook. Cheap and model-free, so it can be called
+// while the user is still typing rather than waiting for a generation.
+export function lookupFolder({ requirementText, signal }) {
+  return json("/requirements/folder", { requirement_text: requirementText }, { signal });
 }
 
 // No test-case count is sent: how many cases a requirement needs is derived

@@ -58,7 +58,7 @@ def _requirement_key(stem: str) -> str:
     return stem.split("_", 1)[0].strip().upper()
 
 
-def _read_examples(config: PipelineConfig) -> str:
+def _read_examples(config: PipelineConfig, max_chars: int) -> str:
     examples_dir = config.examples_dir
     if not examples_dir or not examples_dir.is_dir():
         return ""
@@ -92,10 +92,44 @@ def _read_examples(config: PipelineConfig) -> str:
             sections.append(
                 "Reference script:\n" + _joined_text(script_files[requirement_id], config)
             )
-        blocks.append("\n\n".join(sections))
+        blocks.append((requirement_id, "\n\n".join(sections)))
 
-    logger.info("Loaded %d example(s) from %s", len(blocks), examples_dir)
-    return "\n\n---\n\n".join(blocks)
+    # Every one of these examples goes into every request in full — there's
+    # no ranking or per-request selection, since none of them is "more
+    # relevant" to a requirement they weren't written for. But "in full"
+    # still has to leave room for the system prompt and the retrieved KB/
+    # track context inside llm_num_ctx: if the combined prompt overruns it,
+    # Ollama truncates from the front, and the model loses the JSON-format
+    # instructions before it ever sees the requirement. So whole blocks are
+    # kept, in order, up to the budget — never sliced mid-block, which would
+    # hand the model a corrupt example to imitate — and the rest are simply
+    # left out of this request rather than crammed in truncated.
+    separator = "\n\n---\n\n"
+    included: list[str] = []
+    skipped: list[str] = []
+    total = 0
+    for requirement_id, block in blocks:
+        addition = len(block) + (len(separator) if included else 0)
+        if total + addition > max_chars:
+            skipped.append(requirement_id)
+            continue
+        included.append(block)
+        total += addition
+
+    if skipped:
+        logger.warning(
+            "Examples budget (%d chars) only fit %d of %d example(s); left out %s. "
+            "Raise static_examples_max_chars in config/rag_config.yaml (mind llm_num_ctx) "
+            "to include more.",
+            max_chars,
+            len(included),
+            len(blocks),
+            ", ".join(skipped),
+        )
+    else:
+        logger.info("Loaded %d example(s) from %s (%d chars)", len(included), examples_dir, total)
+
+    return separator.join(included)
 
 
 def _joined_text(path: Path, config: PipelineConfig) -> str:
@@ -123,11 +157,16 @@ class StaticContextProvider:
     data/track_data, or data/Examples.
     """
 
-    def __init__(self, ingestion_config: PipelineConfig, track_mapping: TrackMapping):
+    def __init__(
+        self,
+        ingestion_config: PipelineConfig,
+        track_mapping: TrackMapping,
+        examples_max_chars: int = 8000,
+    ):
         self._config = ingestion_config
         self._track_mapping = track_mapping
         self._keyword_index = KeywordIndex(_build_static_chunks(ingestion_config))
-        self.examples_context = _read_examples(ingestion_config)
+        self.examples_context = _read_examples(ingestion_config, examples_max_chars)
 
     def api_context(self, query: str, top_k: int) -> str:
         if top_k <= 0:

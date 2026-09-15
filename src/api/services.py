@@ -11,6 +11,7 @@ from kb_ingestion.config import PipelineConfig
 from kb_ingestion.embeddings import LocalBGEM3Embedder
 from kb_ingestion.vector_store import VectorStore
 from rag.cache import EmbeddingCache, LruTtlCache
+from rag.caf_mapping import CafMapping
 from rag.confidence import ConfidenceScorer
 from rag.config import RAGSettings
 from rag.generator import TestCaseGenerator, TestScriptGenerator
@@ -60,6 +61,10 @@ class Services:
         self.prompts = PromptLibrary(repo_root / "config" / "prompts.yaml")
         self.track_mapping = TrackMapping(repo_root / "config" / "track_mapping.yaml")
         self.ingestion_config = PipelineConfig.load(repo_root / "config" / "config.yaml")
+        # Requirement -> feature (the datasheet's Folder column). Cheap
+        # enough to build eagerly: one small workbook, read on demand and
+        # re-read only when it changes.
+        self.caf_mapping = CafMapping(self.ingestion_config.caf_mapping_file)
         self.llm_client = OllamaClient(self.settings.generation)
 
         # Re-entrant: the lazy properties below are layered (retriever needs
@@ -137,7 +142,9 @@ class Services:
             with self._lock:
                 if self._static_context is None:
                     self._static_context = StaticContextProvider(
-                        self.ingestion_config, self.track_mapping
+                        self.ingestion_config,
+                        self.track_mapping,
+                        examples_max_chars=self.settings.retrieval.static_examples_max_chars,
                     )
         return self._static_context
 
@@ -155,6 +162,7 @@ class Services:
                         ),
                         static_context=self.static_context,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
+                        caf_mapping=self.caf_mapping,
                     )
         return self._test_case_generator
 

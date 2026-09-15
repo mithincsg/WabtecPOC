@@ -39,6 +39,10 @@ class PipelineConfig:
     static_sources: list[SourceRoot] = field(default_factory=list)
     # Few-shot example folder, always included in full rather than searched.
     examples_dir: Path | None = None
+    # Change Approval Form workbook: requirement number -> feature, which is
+    # the datasheet's Folder column. Neither embedded nor searched — looked
+    # up directly (src/rag/caf_mapping.py).
+    caf_mapping_file: Path | None = None
 
     chunk_max_tokens: int = 512
     chunk_overlap_tokens: int = 50
@@ -68,6 +72,7 @@ class PipelineConfig:
         raw_sources = raw.pop("sources", None)
         raw_static_sources = raw.pop("static_sources", None)
         raw_examples_dir = raw.pop("examples_dir", None)
+        raw_caf_mapping_file = raw.pop("caf_mapping_file", None)
 
         for key, value in raw.items():
             if not hasattr(cfg, key):
@@ -79,6 +84,9 @@ class PipelineConfig:
         cfg.sources = [cfg._build_source(entry) for entry in raw_sources]
         cfg.static_sources = [cfg._build_source(entry) for entry in raw_static_sources or []]
         cfg.examples_dir = cfg.resolve(raw_examples_dir) if raw_examples_dir else None
+        cfg.caf_mapping_file = (
+            cfg.resolve(raw_caf_mapping_file) if raw_caf_mapping_file else None
+        )
         cfg.chroma_persist_dir = cfg.resolve(cfg.chroma_persist_dir)
         return cfg
 

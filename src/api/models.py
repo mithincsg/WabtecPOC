@@ -100,9 +100,29 @@ class GenerateTestCasesRequest(BaseModel):
     refresh: bool = False
 
 
+class FolderLookupRequest(BaseModel):
+    """Either the whole requirement text (the ID is parsed out of it) or just
+    the requirement number — the UI sends whatever the user has typed."""
+
+    requirement_text: str = Field(min_length=1)
+
+
+class FolderLookupResponse(BaseModel):
+    requirement_id: str | None = None
+    folder: str = ""
+    # "caf" when data/CAF.xlsx maps this requirement to a feature, "heading"
+    # when the folder was read out of the requirement text instead, "" when
+    # nothing matched. The UI says which, so an unmapped requirement is
+    # visible rather than silently folder-less.
+    folder_source: str = ""
+    section: str = ""
+
+
 class GenerateTestCasesResponse(BaseModel):
     requirement_id: str | None
     functional_area: str | None
+    folder: str = ""
+    folder_source: str = ""
     test_cases: list[TestCaseOut]
     retrieved: list[RetrievedChunkOut]
     track_subdivisions: list[str] = Field(default_factory=list)
@@ -151,3 +171,4 @@ class HealthResponse(BaseModel):
     llm_model: str
     llm_available: bool
     mapped_requirements: list[str] = Field(default_factory=list)
+    caf_mapped_requirements: int = 0
