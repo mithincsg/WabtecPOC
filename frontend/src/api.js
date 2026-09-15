@@ -42,21 +42,34 @@ export function lookupFolder({ requirementText, signal }) {
   return json("/requirements/folder", { requirement_text: requirementText }, { signal });
 }
 
+// Whether the requirement text mentions a track keyword, and which
+// subdivisions exist to offer in the dropdown if so. Cheap and model-free,
+// so it can be called while the user is still typing.
+export function lookupTrackSubdivisions({ requirementText, signal }) {
+  return json(
+    "/requirements/track-subdivisions",
+    { requirement_text: requirementText },
+    { signal }
+  );
+}
+
 // No test-case count is sent: how many cases a requirement needs is derived
 // from the requirement itself, server-side. `refresh` asks the server to run
 // the model again instead of replaying an identical earlier result.
-export function generateTestCases({ requirementText, topK, refresh = false }) {
+export function generateTestCases({ requirementText, topK, subdivision, refresh = false }) {
   return json("/test-cases", {
     requirement_text: requirementText,
     top_k: topK,
+    subdivision: subdivision || null,
     refresh,
   });
 }
 
-export function generateTestScript({ requirementText, testCases }) {
+export function generateTestScript({ requirementText, testCases, subdivision }) {
   return json("/test-script", {
     requirement_text: requirementText,
     test_cases: testCases,
+    subdivision: subdivision || null,
   });
 }
 

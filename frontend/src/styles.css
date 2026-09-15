@@ -177,6 +177,26 @@ textarea {
   font-size: 0.75rem;
 }
 
+#track-subdivision {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+}
+
+#track-subdivision:disabled {
+  color: var(--ink-soft);
+  background: var(--shell);
+  cursor: not-allowed;
+}
+
+#track-subdivision.invalid {
+  border-color: var(--stop);
+  background: var(--stop-wash);
+}
+
 textarea {
   min-height: 17rem;
   padding: 0.625rem 0.75rem;

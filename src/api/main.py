@@ -34,6 +34,8 @@ from api.models import (  # noqa: E402
     RequirementUploadResponse,
     RetrievedChunkOut,
     TestCaseOut,
+    TrackSubdivisionCheckRequest,
+    TrackSubdivisionCheckResponse,
 )
 from api.services import Services  # noqa: E402
 from rag.cache import stable_key  # noqa: E402
@@ -152,7 +154,6 @@ def _health() -> HealthResponse:
         # Ollama reports tags as "qwen2.5:7b-instruct"; a config value
         # without the tag still refers to the same model.
         llm_available=any(m == configured or m.startswith(configured) for m in models),
-        mapped_requirements=services.track_mapping.known_requirement_ids,
         caf_mapped_requirements=len(services.caf_mapping.known_requirement_ids),
     )
 
@@ -211,6 +212,24 @@ async def lookup_folder(request: FolderLookupRequest) -> FolderLookupResponse:
     )
 
 
+@app.post("/api/requirements/track-subdivisions", response_model=TrackSubdivisionCheckResponse)
+async def lookup_track_subdivisions(
+    request: TrackSubdivisionCheckRequest,
+) -> TrackSubdivisionCheckResponse:
+    """Whether this requirement's text mentions a track keyword, and which
+    subdivisions exist to offer if so.
+
+    Answered on its own, same reasoning as `lookup_folder`: the UI can show
+    the subdivision dropdown as soon as the requirement text is typed,
+    before a generation call ever runs.
+    """
+    needs_subdivision = services.track_mapping.matches(request.requirement_text)
+    return TrackSubdivisionCheckResponse(
+        needs_subdivision=needs_subdivision,
+        subdivisions=services.static_context.known_subdivisions if needs_subdivision else [],
+    )
+
+
 @app.post("/api/test-cases", response_model=GenerateTestCasesResponse)
 async def generate_test_cases(
     request: GenerateTestCasesRequest,
@@ -224,6 +243,7 @@ async def generate_test_cases(
         request.requirement_text,
         request.top_k,
         request.doc_types,
+        request.subdivision,
         generation.model,
         generation.max_test_cases,
         services.prompt_revision(),
@@ -240,6 +260,7 @@ async def generate_test_cases(
             max_test_cases=generation.max_test_cases,
             doc_types=request.doc_types,
             top_k=request.top_k,
+            subdivision=request.subdivision,
         )
 
     try:
@@ -276,7 +297,7 @@ async def generate_test_script(request: GenerateScriptRequest) -> GenerateScript
     try:
         result = await _generate(
             lambda: services.script_generator.generate(
-                request.requirement_text, test_cases
+                request.requirement_text, test_cases, subdivision=request.subdivision
             )
         )
     except (LLMConnectionError, LLMResponseError) as exc:

@@ -87,6 +87,7 @@ class TestCaseGenerator:
         max_test_cases: int = DEFAULT_MAX_TEST_CASES,
         doc_types: list[str] | None = None,
         top_k: int | None = None,
+        subdivision: str | None = None,
     ) -> TestCaseResult:
         """How many test cases come back is decided by the requirement, not
         by the caller: the prompt asks the model to enumerate the verifiable
@@ -100,7 +101,8 @@ class TestCaseGenerator:
 
         retrieval = self.retriever.retrieve(
             parsed.query_text,
-            requirement_id=parsed.requirement_id,
+            requirement_text=parsed.raw_text,
+            subdivision=subdivision,
             doc_types=doc_types,
             top_k=top_k,
         )
@@ -108,7 +110,7 @@ class TestCaseGenerator:
         context = retrieval.context or "(Nothing in the knowledge base matched this requirement.)"
         context = _append_static_context(
             context,
-            self._static_track_context(parsed),
+            self._static_track_context(parsed, subdivision),
             self.static_context.examples_context if self.static_context else "",
         )
 
@@ -155,11 +157,11 @@ class TestCaseGenerator:
     ) -> tuple[str, str]:
         return resolve_folder(self.caf_mapping, requirement_id, functional_area)
 
-    def _static_track_context(self, parsed: ParsedRequirement) -> str:
+    def _static_track_context(self, parsed: ParsedRequirement, subdivision: str | None) -> str:
         if self.static_context is None:
             return ""
         return self.static_context.track_context(
-            parsed.query_text, parsed.requirement_id, self.static_track_top_k
+            parsed.query_text, parsed.raw_text, subdivision, self.static_track_top_k
         )
 
 
@@ -198,7 +200,11 @@ class TestScriptGenerator:
         self.static_track_top_k = static_track_top_k
 
     def generate(
-        self, requirement_text: str, test_cases: list[TestCase]
+        self,
+        requirement_text: str,
+        test_cases: list[TestCase],
+        *,
+        subdivision: str | None = None,
     ) -> ScriptResult:
         if not test_cases:
             raise ValueError("Generate test cases before generating a script.")
@@ -218,7 +224,7 @@ class TestScriptGenerator:
         )
         track_context = (
             self.static_context.track_context(
-                query, parsed.requirement_id, self.static_track_top_k
+                query, parsed.raw_text, subdivision, self.static_track_top_k
             )
             if self.static_context
             else ""
@@ -229,7 +235,7 @@ class TestScriptGenerator:
         # pass test-case generation uses, just re-run against the script's
         # query (requirement + the approved test-case descriptions).
         parameter_context = self.retriever.retrieve(
-            query, requirement_id=parsed.requirement_id
+            query, requirement_text=parsed.raw_text, subdivision=subdivision
         ).context
 
         prompt = self.prompts.test_script

@@ -152,10 +152,13 @@ comment for the reasoning. `static_api_top_k`/`static_track_top_k` in
 `config/rag_config.yaml` control how many chunks of each are pulled per
 request.
 
-Track data is additionally mapped, not searched blindly:
-`config/track_mapping.yaml` says which subdivisions a requirement applies to
-(e.g. `L2R9479: ["08880"]`); `unmapped: exclude` (or `all`) controls the
-fallback. `8880`/`08880` both work, and `L2R9479_A` falls back to `L2R9479`.
+Track data is additionally keyword-gated, not searched blindly:
+`config/track_mapping.yaml` lists the keywords (Speed Restrictions, Highway
+Crossings, Blocks, ...) whose presence in a requirement's text means it's
+track-relevant. A keyword match can't say *which* subdivision applies, so it
+only flips on a subdivision dropdown in the UI (`/api/requirements/track-
+subdivisions`, options sourced from whatever's actually ingested); retrieval
+stays off until a person picks one. No match, no track data.
 
 `data/Examples/` (config `examples_dir`) holds requirement → reference test
 cases → reference script triples for a handful of other requirements, always
@@ -317,7 +320,7 @@ config — no code change needed for any of these.
 | `config/config.yaml` | `sources` (embedded), `static_sources` (BM25-only), `examples_dir`, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
 | `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits, `max_test_cases` ceiling, confidence weights/threshold |
 | `config/prompts.yaml` | Every system and user prompt |
-| `config/track_mapping.yaml` | Requirement → subdivision mapping |
+| `config/track_mapping.yaml` | Track-relevance keywords (subdivision itself is picked by the user, not mapped) |
 | `config/caf_mapping.json` | Requirement → feature, i.e. the datasheet's `Folder` column — generated from `data/CAF.xlsx` by `scripts/convert_caf_mapping.py` |
 | `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, `RAG_RETRIEVAL_WORKERS`, Ollama host override, frontend dev-server port/proxy target |
 
@@ -334,9 +337,11 @@ or generation pipeline.
 ### API routes (`src/api/main.py`)
 
 `GET /api/health`, `POST /api/requirements/upload`,
-`POST /api/requirements/folder` (CAF folder lookup, no model), `POST /api/test-cases`
-(datasheet generation), `POST /api/test-script` (script generation, second
-LLM call), `POST /api/test-cases/export` and `POST /api/test-script/export`
+`POST /api/requirements/folder` (CAF folder lookup, no model),
+`POST /api/requirements/track-subdivisions` (keyword match + subdivision
+options, no model), `POST /api/test-cases` (datasheet generation),
+`POST /api/test-script` (script generation, second LLM call),
+`POST /api/test-cases/export` and `POST /api/test-script/export`
 (`.xlsx`/`.txt` downloads). `services.py` wires the shared retriever/generator
 instances; `models.py` holds the request/response schemas.
 
@@ -360,7 +365,7 @@ src/kb_ingestion/
 src/rag/
   requirement_parser.py        requirement ID + functional area
   caf_mapping.py                requirement -> feature (the Folder column), from config/caf_mapping.json
-  track_mapping.py              requirement -> subdivision
+  track_mapping.py              requirement text -> track-relevance keyword match
   static_context.py             python_apis/track_data/Examples, BM25-only, never embedded
   keyword_index.py               BM25 arm over the embedded collection
   retriever.py                   hybrid search + RRF + context assembly

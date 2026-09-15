@@ -176,10 +176,20 @@ class StaticContextProvider:
         )
         return _format_hits(hits)
 
-    def track_context(self, query: str, requirement_id: str | None, top_k: int) -> str:
+    @property
+    def known_subdivisions(self) -> list[str]:
+        """Subdivisions actually present in the ingested track data, for the
+        UI's subdivision dropdown."""
+        return self._keyword_index.distinct_values(
+            "subdivision", predicate=lambda m: m.get("document_type") == "track_data"
+        )
+
+    def track_context(
+        self, query: str, requirement_text: str | None, subdivision: str | None, top_k: int
+    ) -> str:
         if top_k <= 0:
             return ""
-        selection = self._track_mapping.selection_for(requirement_id)
+        selection = self._track_mapping.selection_for(requirement_text, subdivision)
         if not selection.enabled:
             return ""
 

@@ -6,6 +6,7 @@ import {
   generateTestCases,
   generateTestScript,
   lookupFolder,
+  lookupTrackSubdivisions,
   uploadRequirement,
 } from "./api.js";
 import DatasheetTable from "./components/DatasheetTable.jsx";
@@ -67,6 +68,34 @@ function useFolderLookup(requirementNumber) {
   return folder;
 }
 
+// Whether the requirement mentions a track keyword (Speed Restrictions,
+// Highway Crossings, ...), and which subdivisions exist to pick from if so.
+// Keyed on the requirement text itself, not the Requirement No field, since
+// the keywords live in the requirement's prose. Debounced/aborted the same
+// way useFolderLookup is, for the same reason.
+function useTrackSubdivisionCheck(requirementText) {
+  const [check, setCheck] = useState(null);
+
+  useEffect(() => {
+    if (!requirementText.trim()) {
+      setCheck(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      lookupTrackSubdivisions({ requirementText, signal: controller.signal })
+        .then(setCheck)
+        .catch(() => {});
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [requirementText]);
+
+  return check;
+}
+
 export default function App() {
   const [health, setHealth] = useState(null);
   const [requirementNumber, setRequirementNumber] = useState("");
@@ -77,6 +106,9 @@ export default function App() {
   // anything would just look broken.
   const [requirementNumberTouched, setRequirementNumberTouched] = useState(false);
 
+  const [selectedSubdivision, setSelectedSubdivision] = useState("");
+  const [subdivisionTouched, setSubdivisionTouched] = useState(false);
+
   const [result, setResult] = useState(null);
   const [script, setScript] = useState(null);
 
@@ -85,6 +117,17 @@ export default function App() {
 
   const elapsed = useElapsed(busy === "cases" || busy === "script");
   const folderLookup = useFolderLookup(requirementNumber);
+  const trackCheck = useTrackSubdivisionCheck(requirementText);
+  const needsSubdivision = Boolean(trackCheck?.needs_subdivision);
+
+  // The dropdown only makes sense for whatever requirement is currently
+  // typed in — a stale pick from a previous requirement (or one left over
+  // from before this requirement stopped needing track data) should not
+  // silently carry forward into the next generation.
+  useEffect(() => {
+    setSelectedSubdivision("");
+    setSubdivisionTouched(false);
+  }, [needsSubdivision]);
 
   useEffect(() => {
     fetchHealth()
@@ -144,11 +187,19 @@ export default function App() {
       setRequirementNumberTouched(true);
       return;
     }
+    if (needsSubdivision && !selectedSubdivision) {
+      setSubdivisionTouched(true);
+      return;
+    }
     // A new set of test cases invalidates any script written from the old
     // ones, so it's cleared rather than left to be downloaded by mistake.
     setScript(null);
     const generated = await run("cases", () =>
-      generateTestCases({ requirementText: composedRequirementText(), refresh })
+      generateTestCases({
+        requirementText: composedRequirementText(),
+        subdivision: selectedSubdivision,
+        refresh,
+      })
     );
     if (generated) setResult(generated);
   }
@@ -158,6 +209,7 @@ export default function App() {
       generateTestScript({
         requirementText: composedRequirementText(),
         testCases: result.test_cases,
+        subdivision: result.track_subdivisions?.[0],
       })
     );
     if (generated) setScript(generated);
@@ -166,8 +218,12 @@ export default function App() {
   const hasTestCases = Boolean(result?.test_cases?.length);
   const generating = busy === "cases" || busy === "script";
   const requirementNumberMissing = requirementNumberTouched && !requirementNumber.trim();
+  const subdivisionMissing = subdivisionTouched && needsSubdivision && !selectedSubdivision;
   const canGenerate =
-    requirementNumber.trim().length > 0 && requirementText.trim().length > 0 && !busy;
+    requirementNumber.trim().length > 0 &&
+    requirementText.trim().length > 0 &&
+    (!needsSubdivision || Boolean(selectedSubdivision)) &&
+    !busy;
 
   return (
     <div className="app">
@@ -249,6 +305,35 @@ export default function App() {
               placeholder={"15 Speed Enforcement\n\nThe onboard shall …"}
               spellCheck="false"
             />
+          </div>
+
+          <div className="field">
+            <label htmlFor="track-subdivision">Track subdivision</label>
+            <p className="help">
+              {needsSubdivision
+                ? "This requirement mentions track data — pick the subdivision it's tested on."
+                : "This requirement doesn't mention track data, so no subdivision applies."}
+            </p>
+            <select
+              id="track-subdivision"
+              className={subdivisionMissing ? "invalid" : ""}
+              value={selectedSubdivision}
+              disabled={!needsSubdivision}
+              onChange={(event) => setSelectedSubdivision(event.target.value)}
+              onBlur={() => setSubdivisionTouched(true)}
+              aria-invalid={subdivisionMissing}
+            >
+              <option value="">None</option>
+              {needsSubdivision &&
+                trackCheck.subdivisions.map((subdivision) => (
+                  <option key={subdivision} value={subdivision}>
+                    {subdivision}
+                  </option>
+                ))}
+            </select>
+            {subdivisionMissing && (
+              <p className="field-error">Pick a subdivision to generate against.</p>
+            )}
           </div>
 
           <label className="file-drop">

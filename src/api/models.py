@@ -94,6 +94,10 @@ class GenerateTestCasesRequest(BaseModel):
     requirement_text: str = Field(min_length=1)
     top_k: int | None = Field(default=None, ge=1, le=50)
     doc_types: list[str] | None = None
+    # Set when the requirement text matched a track keyword and the user
+    # picked a subdivision from the dropdown. None otherwise — track data is
+    # then skipped entirely, whether or not a keyword matched.
+    subdivision: str | None = None
     # Set by a caller that wants the model re-run rather than the previous
     # identical result replayed. The UI does not expose it; it exists so a
     # cached answer is never the only answer available.
@@ -118,6 +122,20 @@ class FolderLookupResponse(BaseModel):
     section: str = ""
 
 
+class TrackSubdivisionCheckRequest(BaseModel):
+    """Whichever requirement text the UI has typed/pasted so far — same
+    tolerant shape as FolderLookupRequest."""
+
+    requirement_text: str = Field(min_length=1)
+
+
+class TrackSubdivisionCheckResponse(BaseModel):
+    # True when the requirement text mentions a track keyword, so the UI
+    # should offer the subdivision dropdown instead of leaving it disabled.
+    needs_subdivision: bool = False
+    subdivisions: list[str] = Field(default_factory=list)
+
+
 class GenerateTestCasesResponse(BaseModel):
     requirement_id: str | None
     functional_area: str | None
@@ -140,6 +158,10 @@ class GenerateScriptRequest(BaseModel):
     # The reviewed rows, not the ones first generated — the script is written
     # against whatever the user actually kept.
     test_cases: list[TestCaseOut] = Field(min_length=1)
+    # The subdivision picked for this requirement during test-case
+    # generation, if any — carried over so the script's track context is
+    # filtered the same way the datasheet's was.
+    subdivision: str | None = None
 
 
 class GenerateScriptResponse(BaseModel):
@@ -170,5 +192,4 @@ class HealthResponse(BaseModel):
     embedding_model: str
     llm_model: str
     llm_available: bool
-    mapped_requirements: list[str] = Field(default_factory=list)
     caf_mapped_requirements: int = 0

@@ -1,23 +1,39 @@
-# Requirement -> track-data mapping.
+# Requirement text -> "does this requirement need track data?" keywords.
 #
 # The track_data/ folder holds one HTML subdivision report per subdivision
-# (08101, 08880, ...). Only the subdivisions listed for a requirement are
-# retrieved for it, so a Speed Enforcement requirement tested on 08880
-# never pulls in unrelated 08101 track features.
+# (08101, 08880, ...). Rather than hardcoding which subdivision each
+# requirement uses, a requirement is flagged as track-relevant when its text
+# mentions any of the keywords below (case-insensitive substring match). When
+# flagged, the UI offers a dropdown of the subdivisions actually present in
+# the ingested data so a person can pick the right one — the keyword can say
+# track data is relevant, but not which subdivision, so that choice is
+# always made by a human.
 #
-# Keys are requirement IDs as they appear in the requirement text; values
-# are subdivision IDs, matched against the `subdivision` metadata the HTML
-# extractor reads out of each report ("Subdivision \"08880\"").
-# Add a row when a requirement starts being tested on new track.
+# Add a term here when a new track-feature category should trigger the
+# dropdown.
 
-mappings:
-  L2R9479: ["08880"]
-  L2R7983: ["08101"]
-  L2R10673: ["08102"]
-  L2R1145424: ["08214"]
-
-# What to do for a requirement that has no row above:
-#   exclude -> skip track data entirely (recommended; avoids pulling in
-#              thousands of irrelevant track-feature rows)
-#   all     -> search every subdivision
-unmapped: exclude
+keywords:
+  - Blocks
+  - Switches
+  - "Signals, Communicating"
+  - "Signals, Non-Communicating"
+  - Cab Signal Dropouts
+  - Clearance Points
+  - Device Status Table
+  - DOT Numbers
+  - Energy Management Parameters
+  - Highway Crossings
+  - Highway Crossings Quiet Day
+  - Licenses
+  - Linkages
+  - Milepost Markers
+  - Non-Comm Area
+  - Signage
+  - Speed Enforcement Cab Code Rate
+  - Speed Restrictions
+  - Track Names
+  - Track Speeds
+  - Wayside Devices
+  - Wayside Interface Units
+  - Wireless Crossing Activation
+  - Wireless Crossing Island

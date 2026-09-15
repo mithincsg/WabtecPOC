@@ -109,24 +109,32 @@ stamped with a `document_type` taken from its root; set
 overrides it, which is how `knowledge_base/reference_test_cases/` becomes its
 own filterable type without a code change.
 
-### Track data is mapped, not searched blindly
+### Track data is keyword-gated, not searched blindly
 
 Each subdivision report lists thousands of track features. Searching all of
 them for every requirement drowns retrieval in track the requirement isn't
-tested on, so `config/track_mapping.yaml` says which subdivisions a
-requirement applies to:
+tested on, so `config/track_mapping.yaml` lists the keywords (Speed
+Restrictions, Highway Crossings, Blocks, Switches, ...) whose presence in a
+requirement's text means it's track-relevant:
 
 ```yaml
-mappings:
-  L2R9479: ["08880"]
-  L2R7983: ["08101"]
-unmapped: exclude     # or `all`
+keywords:
+  - Speed Restrictions
+  - Highway Crossings
+  - Blocks
+  - Switches
+  # ...
 ```
 
-`8880` and `08880` both work, and `L2R9479_A` falls back to `L2R9479`. A
-requirement with no row gets no track data at all (`exclude`). Track data is
-retrieved in its own filtered pass and appended after the general results, so
-it can never crowd out requirement prose on score alone.
+A requirement's text can only say *that* track data applies to it, never
+*which* subdivision — so a keyword match doesn't retrieve anything by itself.
+It surfaces a subdivision dropdown in the UI (populated by
+`/api/requirements/track-subdivisions` from whatever subdivisions are
+actually ingested) for a person to pick from; only once a subdivision is
+chosen does retrieval run its filtered pass. No keyword match means no track
+data at all. Track data is retrieved in its own filtered pass and appended
+after the general results, so it can never crowd out requirement prose on
+score alone.
 
 ## How chunking preserves structure
 
@@ -281,7 +289,7 @@ edit.
 | `config/config.yaml` | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
 | `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
 | `config/prompts.yaml` | Every system and user prompt |
-| `config/track_mapping.yaml` | Requirement → subdivision |
+| `config/track_mapping.yaml` | Track-relevance keywords (subdivision itself is picked by the user) |
 | `.env` | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target |
 
 ## Layout
@@ -300,7 +308,7 @@ src/kb_ingestion/
   pipeline.py               orchestration
 src/rag/
   requirement_parser.py     requirement ID + functional area
-  track_mapping.py          requirement → subdivision
+  track_mapping.py          requirement text → track-relevance keyword match
   keyword_index.py          BM25 arm
   retriever.py              hybrid search + RRF + context assembly
   cache.py                  embedding / result caches

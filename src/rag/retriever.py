@@ -124,7 +124,8 @@ class HybridRetriever:
         self,
         query_text: str,
         *,
-        requirement_id: str | None = None,
+        requirement_text: str | None = None,
+        subdivision: str | None = None,
         doc_types: list[str] | None = None,
         top_k: int | None = None,
     ) -> RetrievalResult:
@@ -132,7 +133,7 @@ class HybridRetriever:
             return RetrievalResult([], "", TrackSelection((), False), 0, 0)
 
         top_k = top_k if top_k is not None else self.config.top_k
-        selection = self.track_mapping.selection_for(requirement_id)
+        selection = self.track_mapping.selection_for(requirement_text, subdivision)
 
         cache_key = (
             query_text,

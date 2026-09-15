@@ -161,6 +161,27 @@ class KeywordIndex:
                 break
         return hits
 
+    def distinct_values(self, field: str, predicate=None) -> list[str]:
+        """Distinct non-empty values of one metadata field across the corpus.
+
+        Used to enumerate things like the subdivisions actually present in
+        the ingested track data, without a second data source to keep in
+        sync with what was ingested.
+        """
+        corpus = self._ensure_built()
+        if corpus is None:
+            return []
+
+        values: set[str] = set()
+        for metadata in corpus.metadatas:
+            metadata = metadata or {}
+            if predicate is not None and not predicate(metadata):
+                continue
+            value = metadata.get(field)
+            if value:
+                values.add(value)
+        return sorted(values)
+
     def invalidate(self) -> None:
         self._corpus = None
 
