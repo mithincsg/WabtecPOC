@@ -9,7 +9,8 @@ from .caf_mapping import CafMapping
 from .confidence import ConfidenceScorer
 from .llm_client import LLMClient
 from .prompts import PromptLibrary
-from .requirement_parser import ParsedRequirement, parse_requirement
+from .requirement_parser import parse_requirement
+from .keyword_index import KeywordHit
 from .retriever import HybridRetriever, RetrievedChunk
 from .schema import TEST_CASES_JSON_SCHEMA, TestCase, parse_test_cases
 from .static_context import StaticContextProvider
@@ -59,26 +60,28 @@ class ScriptResult:
 
 
 class TestCaseGenerator:
-    """requirement -> understanding -> hybrid retrieval -> context -> LLM ->
+    """requirement -> understanding -> parameter-config context -> LLM ->
     datasheet rows -> confidence scores.
+
+    Deliberately takes no `HybridRetriever`: the embedded knowledge base is
+    not retrieved for this call at all, only the parameter configuration
+    guide's records (see `generate`).
     """
 
     def __init__(
         self,
-        retriever: HybridRetriever,
         llm_client: LLMClient,
         prompts: PromptLibrary,
         scorer: ConfidenceScorer,
         static_context: StaticContextProvider | None = None,
-        static_track_top_k: int = 4,
+        static_parameter_top_k: int = 6,
         caf_mapping: CafMapping | None = None,
     ):
-        self.retriever = retriever
         self.llm_client = llm_client
         self.prompts = prompts
         self.scorer = scorer
         self.static_context = static_context
-        self.static_track_top_k = static_track_top_k
+        self.static_parameter_top_k = static_parameter_top_k
         self.caf_mapping = caf_mapping
 
     def generate(
@@ -86,8 +89,6 @@ class TestCaseGenerator:
         requirement_text: str,
         *,
         max_test_cases: int = DEFAULT_MAX_TEST_CASES,
-        doc_types: list[str] | None = None,
-        top_k: int | None = None,
         subdivision: str | None = None,
     ) -> TestCaseResult:
         """How many test cases come back is decided by the requirement, not
@@ -96,24 +97,46 @@ class TestCaseGenerator:
         `max_test_cases` is only a ceiling, so a sprawling requirement cannot
         ask for a response longer than the model's output budget.
 
-        `subdivision` is the one the user picked in the UI, and is the only
-        thing that decides which track data these cases are written against.
-        Without one, no track data reaches the model at all.
+        `subdivision` is accepted so the caller can send the same request
+        shape as the script call, but no track data reaches this generation:
+        a datasheet row describes a behaviour to verify, not the blocks it
+        runs on.
+
+        Context comes from the parameter configuration guide's records
+        (`data/parameter_config/`) only — the embedded knowledge base is not
+        retrieved for this call at all. The parameter a requirement names is
+        the thing its test cases assert against, and its valid range is what
+        a boundary case is written from, so the records are what a row needs;
+        the same records also stand in for the retrieved-chunk evidence
+        confidence scoring below is built on.
         """
         started = time.monotonic()
         parsed = parse_requirement(requirement_text)
-        folder, folder_source = self.resolve_folder(parsed.requirement_id, parsed.functional_area)
-
-        retrieval = self.retriever.retrieve(
-            parsed.query_text,
-            requirement_id=parsed.requirement_id,
-            doc_types=doc_types,
-            top_k=top_k,
+        logger.info(
+            "Test-case generation started: requirement=%s, functional_area=%s",
+            parsed.requirement_id or "(not stated)",
+            parsed.functional_area or "(none)",
         )
+        folder, folder_source = self.resolve_folder(parsed.requirement_id)
+        logger.info("Folder resolved: %r (source=%s)", folder, folder_source or "none")
 
-        track_context, searched_subdivisions = self._static_track_context(parsed, subdivision)
-        context = retrieval.context or "(Nothing in the knowledge base matched this requirement.)"
-        context = _append_static_context(context, track_context)
+        parameter_hits = (
+            self.static_context.parameter_hits(parsed.query_text, self.static_parameter_top_k)
+            if self.static_context
+            else []
+        )
+        parameter_chunks = [_chunk_from_hit(hit) for hit in parameter_hits]
+        # Same query and predicate as parameter_hits above, so this is a cache
+        # hit against keyword_index's per-query memoisation, not a second scan.
+        parameter_context = (
+            self.static_context.parameter_context(parsed.query_text, self.static_parameter_top_k)
+            if self.static_context
+            else ""
+        )
+        # No track data here: a datasheet description states the behaviour to
+        # verify, not the blocks it runs on. Track values are fetched for the
+        # script call, which is what hard-codes them.
+        context = parameter_context or "(No parameter records matched this requirement.)"
 
         prompt = self.prompts.test_cases
         user_prompt = prompt.render_user(
@@ -121,9 +144,16 @@ class TestCaseGenerator:
             requirement_text=parsed.raw_text.strip(),
             context=context,
             max_test_cases=str(max_test_cases),
-            folder_hint=_folder_hint(folder, folder_source),
+            folder_hint=_folder_hint(folder),
             columns=", ".join(label for _, label in _column_labels()),
         )
+        logger.info(
+            "Context assembled: %d chars (parameter records only); "
+            "sending %d-char prompt to the datasheet LLM call",
+            len(context),
+            len(user_prompt),
+        )
+        _log_context_block("parameter records", parameter_context)
 
         raw_response = self.llm_client.generate(
             prompt.system, user_prompt, json_schema=TEST_CASES_JSON_SCHEMA
@@ -133,6 +163,7 @@ class TestCaseGenerator:
             requirement_id=parsed.requirement_id or "",
             default_folder=folder,
         )
+        logger.info("Parsed %d test case(s) from the LLM response", len(test_cases))
 
         if folder_source == "caf":
             # The Change Approval Form is the authority on which feature a
@@ -141,7 +172,14 @@ class TestCaseGenerator:
             for test_case in test_cases:
                 test_case.folder = folder
 
-        self.scorer.score(test_cases, retrieval.chunks, parsed.requirement_id)
+        self.scorer.score(test_cases, parameter_chunks, parsed.requirement_id)
+        elapsed = round(time.monotonic() - started, 1)
+        logger.info(
+            "Test-case generation finished in %.1fs: %d case(s), mean confidence %.2f",
+            elapsed,
+            len(test_cases),
+            (sum(tc.confidence.overall for tc in test_cases) / len(test_cases)) if test_cases else 0.0,
+        )
 
         return TestCaseResult(
             requirement_id=parsed.requirement_id,
@@ -149,29 +187,15 @@ class TestCaseGenerator:
             folder=folder,
             folder_source=folder_source,
             test_cases=test_cases,
-            retrieved_chunks=retrieval.chunks,
+            retrieved_chunks=parameter_chunks,
             raw_response=raw_response,
-            # What the track context was actually drawn from: the picked
-            # subdivision, or nothing when none was picked.
-            track_subdivisions=list(searched_subdivisions),
-            elapsed_seconds=round(time.monotonic() - started, 1),
+            # Always empty: no track data is searched for a datasheet.
+            track_subdivisions=[],
+            elapsed_seconds=elapsed,
         )
 
-    def resolve_folder(
-        self, requirement_id: str | None, functional_area: str | None
-    ) -> tuple[str, str]:
-        return resolve_folder(self.caf_mapping, requirement_id, functional_area)
-
-    def _static_track_context(
-        self, parsed: ParsedRequirement, subdivision: str | None
-    ) -> tuple[str, tuple[str, ...]]:
-        if self.static_context is None:
-            return "", ()
-        return self.static_context.track_context_for(
-            parsed.query_text,
-            self.static_track_top_k,
-            subdivision,
-        )
+    def resolve_folder(self, requirement_id: str | None) -> tuple[str, str]:
+        return resolve_folder(self.caf_mapping, requirement_id)
 
 
 class TestScriptGenerator:
@@ -197,6 +221,7 @@ class TestScriptGenerator:
         static_context: StaticContextProvider | None = None,
         static_api_top_k: int = 4,
         static_track_top_k: int = 4,
+        static_parameter_top_k: int = 6,
     ):
         self.retriever = retriever
         self.llm_client = llm_client
@@ -207,6 +232,7 @@ class TestScriptGenerator:
         self.static_context = static_context
         self.static_api_top_k = static_api_top_k
         self.static_track_top_k = static_track_top_k
+        self.static_parameter_top_k = static_parameter_top_k
 
     def generate(
         self,
@@ -219,6 +245,12 @@ class TestScriptGenerator:
 
         started = time.monotonic()
         parsed = parse_requirement(requirement_text)
+        logger.info(
+            "Script generation started: requirement=%s, %d test case(s), subdivision=%s",
+            parsed.requirement_id or "(not stated)",
+            len(test_cases),
+            subdivision or "(none)",
+        )
 
         # Retrieval for the script is driven by the test cases as well as the
         # requirement: the specific behaviours being automated are what
@@ -240,13 +272,22 @@ class TestScriptGenerator:
             if self.static_context
             else ""
         )
-        # Parameter names/values, message/event names and defaults live in
-        # the knowledge-base data dictionaries — the same general retrieval
-        # pass test-case generation uses, just re-run against the script's
-        # query (requirement + the approved test-case descriptions).
-        parameter_context = self.retriever.retrieve(
-            query, requirement_id=parsed.requirement_id
-        ).context
+        # Parameter names/values, message/event names and defaults come from
+        # two places: the TBC/CFG/THE records converted out of the parameter
+        # configuration guide, and the knowledge-base data dictionaries — the
+        # same general retrieval pass test-case generation uses, re-run
+        # against the script's query (requirement + approved descriptions).
+        # The records go first: a script asserting on TBC137 needs that
+        # parameter's own row, not the paragraph nearest to it.
+        parameter_records = (
+            self.static_context.parameter_context(query, self.static_parameter_top_k)
+            if self.static_context
+            else ""
+        )
+        parameter_context = _append_static_context(
+            parameter_records,
+            self.retriever.retrieve(query, requirement_id=parsed.requirement_id).context,
+        )
 
         prompt = self.prompts.test_script
         user_prompt = prompt.render_user(
@@ -256,6 +297,14 @@ class TestScriptGenerator:
             api_context=api_context or "(No API definitions were retrieved.)",
             track_context=track_context or "(No track data was retrieved.)",
             parameter_context=parameter_context or "(No parameter/data-dictionary context was retrieved.)",
+        )
+        logger.info(
+            "Context assembled: api=%d chars, track=%d chars, parameter/kb=%d chars; "
+            "sending %d-char prompt to the script LLM call",
+            len(api_context),
+            len(track_context),
+            len(parameter_context),
+            len(user_prompt),
         )
 
         raw = self.llm_client.generate(
@@ -305,34 +354,57 @@ class TestScriptGenerator:
             if retry is not None and not _unfilled_slots(retry):
                 script = retry
 
+        final_script = _finalize_script(script) if script is not None else _as_commented_out(raw)
+        elapsed = round(time.monotonic() - started, 1)
+        logger.info(
+            "Script generation finished in %.1fs: %d chars", elapsed, len(final_script)
+        )
         return ScriptResult(
             requirement_id=parsed.requirement_id,
-            script=(
-                _finalize_script(script)
-                if script is not None
-                else _as_commented_out(raw)
-            ),
-            elapsed_seconds=round(time.monotonic() - started, 1),
+            script=final_script,
+            elapsed_seconds=elapsed,
         )
 
 
+def _chunk_from_hit(hit: KeywordHit) -> RetrievedChunk:
+    """A parameter-config keyword hit, in the shape confidence scoring and
+    the API's retrieved-context response already know how to read.
+
+    `similarity` stays None — these are BM25-only hits, never embedded — so
+    `ConfidenceScorer._retrieval_score` falls back to `bm25_score` for them.
+    """
+    return RetrievedChunk(
+        chunk_id=hit.chunk_id,
+        text=hit.text,
+        metadata=hit.metadata,
+        bm25_score=hit.score,
+        score=hit.score,
+        matched_by=["keyword"],
+    )
+
+
+def _log_context_block(label: str, text: str) -> None:
+    logger.info("--- %s context (%d chars) ---\n%s", label, len(text), text or "(empty)")
+
+
 def _append_static_context(context: str, *extra_blocks: str) -> str:
-    blocks = [context, *(b for b in extra_blocks if b)]
+    blocks = [b for b in (context, *extra_blocks) if b]
     return "\n\n---\n\n".join(blocks)
 
 
 def resolve_folder(
     caf_mapping: CafMapping | None,
     requirement_id: str | None,
-    functional_area: str | None,
 ) -> tuple[str, str]:
     """The datasheet's Folder for a requirement, and where it came from.
 
-    The Change Approval Form wins when it has a row for the requirement: it
-    is the maintained list of which feature each requirement belongs to, so
-    it keeps the folder stable across runs. The heading read out of the
-    pasted requirement text is only the fallback for a requirement the form
-    doesn't cover yet.
+    The Change Approval Form is the only source: it is the maintained list
+    of which feature each requirement belongs to. A requirement the form
+    doesn't cover yet gets an empty folder rather than a guess — the
+    heading read out of the pasted requirement text names a functional
+    area, not necessarily the CAF feature, so filling the column with it
+    would put an unmapped requirement in a folder that looks authoritative
+    but isn't.
 
     A free function, not just a generator method, because the API's folder
     lookup answers on every keystroke and must not pull in the generator —
@@ -343,23 +415,16 @@ def resolve_folder(
     caf_folder = caf_mapping.folder_for(requirement_id) if caf_mapping else ""
     if caf_folder:
         return caf_folder, "caf"
-    if functional_area:
-        return functional_area, "heading"
     return "", ""
 
 
-def _folder_hint(folder: str, folder_source: str) -> str:
+def _folder_hint(folder: str) -> str:
     if not folder:
         return ""
-    if folder_source == "caf":
-        # Mapped in the Change Approval Form, so there is nothing to weigh
-        # up: the row is overwritten with this value afterwards anyway, and
-        # saying so keeps the model from writing a different one.
-        return f'Use exactly "{folder}" as the folder for every row.'
-    return (
-        f'Use "{folder}" as the folder unless the retrieved '
-        "test cases consistently use a different name for this area."
-    )
+    # Mapped in the Change Approval Form, so there is nothing to weigh up:
+    # the row is overwritten with this value afterwards anyway, and saying
+    # so keeps the model from writing a different one.
+    return f'Use exactly "{folder}" as the folder for every row.'
 
 
 def _column_labels():

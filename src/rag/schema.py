@@ -30,12 +30,14 @@ DATASHEET_COLUMNS: tuple[tuple[str, str], ...] = (
 _TEST_TYPES = ("Positive", "Negative")
 _YES_NO = ("Yes", "No")
 _TRUE_FALSE = ("True", "False")
+# The three the delivered workbooks actually use. This tuple is also the
+# decoder's enum, so a technique missing here is one the model physically
+# cannot emit — "Cause Effect Testing" was named in prompts.yaml but absent
+# from this tuple, so every such case silently normalised to the default.
 _TEST_TECHNIQUES = (
     "Equivalence Partitioning",
     "Boundary Value Analysis",
-    "Decision Table",
-    "State Transition",
-    "Error Guessing",
+    "Cause Effect Testing",
 )
 
 
@@ -303,11 +305,20 @@ def _choose(value: object, allowed: tuple[str, ...], default: str) -> str:
     text = _clean(value)
     if not text:
         return default
+    # Compared on letters and digits only, so "Cause-Effect testing" and
+    # "cause effect  testing" both land on the house spelling instead of
+    # falling through to the default.
+    normalised = _fold(text)
     for option in allowed:
-        if text.lower() == option.lower():
+        if normalised == _fold(option):
             return option
     # Partial match, so "boundary value" lands on "Boundary Value Analysis".
     for option in allowed:
-        if text.lower() in option.lower() or option.lower() in text.lower():
+        folded = _fold(option)
+        if normalised in folded or folded in normalised:
             return option
     return default
+
+
+def _fold(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()

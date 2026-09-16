@@ -83,8 +83,7 @@ class CafMapping:
     def _load(self) -> None:
         if self.path is None or not self.path.is_file():
             # No mapping file is a valid setup — it just means no requirement
-            # has a feature mapped yet, and the folder falls back to the
-            # functional area read out of the requirement text.
+            # has a feature mapped yet, and the folder is left empty.
             self._entries, self._mtime = {}, None
             return
 

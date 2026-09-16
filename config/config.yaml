@@ -12,6 +12,9 @@ static_sources:
   - path: data/track_data
     document_type: track_data
     subfolders_as_type: false
+  - path: data/parameter_config
+    document_type: parameter_config
+    subfolders_as_type: false
 
 
 examples_dir: data/Examples

@@ -48,7 +48,8 @@ from rag.schema import TestCaseParseError  # noqa: E402
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(levelname)s %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -201,9 +202,7 @@ async def lookup_folder(request: FolderLookupRequest) -> FolderLookupResponse:
     parsed = parse_requirement(request.requirement_text)
     requirement_id = parsed.requirement_id
     entry = services.caf_mapping.entry_for(requirement_id)
-    folder, folder_source = resolve_folder(
-        services.caf_mapping, requirement_id, parsed.functional_area
-    )
+    folder, folder_source = resolve_folder(services.caf_mapping, requirement_id)
     return FolderLookupResponse(
         requirement_id=requirement_id,
         folder=folder,
@@ -249,8 +248,6 @@ async def generate_test_cases(
     # on the next request exactly as PromptLibrary promises.
     key = stable_key(
         request.requirement_text,
-        request.top_k,
-        request.doc_types,
         request.subdivision,
         generation.model,
         generation.max_test_cases,
@@ -262,12 +259,16 @@ async def generate_test_cases(
             logger.info("Serving test cases from cache")
             return cached.model_copy(update={"cached": True})
 
+    logger.info(
+        "POST /api/test-cases: requirement=%d chars, subdivision=%s",
+        len(request.requirement_text),
+        request.subdivision or "(none)",
+    )
+
     def work():
         return services.test_case_generator.generate(
             request.requirement_text,
             max_test_cases=generation.max_test_cases,
-            doc_types=request.doc_types,
-            top_k=request.top_k,
             subdivision=request.subdivision,
         )
 
@@ -301,6 +302,13 @@ async def generate_test_cases(
 @app.post("/api/test-script", response_model=GenerateScriptResponse)
 async def generate_test_script(request: GenerateScriptRequest) -> GenerateScriptResponse:
     test_cases = [tc.to_domain() for tc in request.test_cases]
+
+    logger.info(
+        "POST /api/test-script: requirement=%d chars, %d test case(s), subdivision=%s",
+        len(request.requirement_text),
+        len(test_cases),
+        request.subdivision or "(none)",
+    )
 
     try:
         result = await _generate(

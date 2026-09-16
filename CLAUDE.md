@@ -13,6 +13,7 @@ data/knowledge_base/  PDF · XLSX · TXT   ──(PyMuPDF, openpyxl)──┐
                                                                   │
 data/python_apis/  .py/.pyi   ──(ast)──┐                         │
 data/track_data/<subdiv>/  .html + .xml  ──(html.parser, ElementTree)──┤
+data/parameter_config/  .json   ──(one record per TBC/CFG/THE)──┤
                                                    BM25-only, never embedded
 data/Examples/     req → ref test cases → ref script triples      (design-time only:
                    distilled by hand into the templates in prompts.yaml, never sent)
@@ -27,13 +28,14 @@ requirement ──→ requirement understanding ──→ hybrid retrieval ─�
                 approved rows ──→ second generation ──→ test script ──→ .txt
 ```
 
-Only `data/knowledge_base/` is embedded into ChromaDB. `data/python_apis/`
-and `data/track_data/` are parsed with the same extractors but kept in an
-in-process, BM25-only index (`src/rag/static_context.py`) instead — they're
-either one giant stub file or thousands of near-identical per-subdivision
-rows, not prose an embedding model gains from, and both are full of exact
-identifiers (API names, block numbers) BM25 already handles better than
-dense search. `data/Examples/` is separate again, and is not sent to the
+Only `data/knowledge_base/` is embedded into ChromaDB. `data/python_apis/`,
+`data/track_data/` and `data/parameter_config/` are parsed with the same
+extractors but kept in an in-process, BM25-only index
+(`src/rag/static_context.py`) instead — they're either one giant stub file or
+thousands of near-identical rows (per subdivision, per parameter), not prose
+an embedding model gains from, and all three are full of exact identifiers
+(API names, block numbers, `TBC137`) BM25 already handles better than dense
+search. `data/Examples/` is separate again, and is not sent to the
 model at all: its patterns are distilled by hand into the house wording
 pattern and house skeleton in `config/prompts.yaml`, so the shape costs a
 few hundred tokens of cacheable system prompt instead of ~10k characters of
@@ -73,8 +75,20 @@ Re-running skips files whose bytes **and** processing code (`pipeline_fingerprin
 are both unchanged since last embedded (stamped on the chunks themselves in
 ChromaDB — no separate state file). Changing an extractor bumps the
 fingerprint and re-embeds the whole KB once. Only `sources:` in
-`config/config.yaml` is affected — `static_sources:` (python_apis, track_data)
-is read fresh from disk on every server start, not ingested.
+`config/config.yaml` is affected — `static_sources:` (python_apis,
+track_data, parameter_config) is read fresh from disk on every server start,
+not ingested.
+
+Convert the Parameter Configuration Guide after dropping a new revision of it
+into `data/knowledge_base/`:
+
+```bash
+python scripts/convert_parameter_guide.py   # the guide PDF -> data/parameter_config/
+```
+
+The running app reads the JSON, not the PDF, so a new revision changes nothing
+until this is re-run and the server restarted (static sources are read at
+startup).
 
 Update the requirement -> feature (Folder) mapping after editing `data/CAF.xlsx`:
 
@@ -119,8 +133,8 @@ API/frontend directly.
 ### Ingestion (`src/kb_ingestion/`)
 
 `config/config.yaml`'s `sources:` list currently has only `data/knowledge_base`
-active (`python_apis`/`track_data` are commented out there — they're ingested
-differently, see below). Every chunk is stamped with a `document_type` from
+active (`python_apis`/`track_data`/`parameter_config` are under
+`static_sources:` instead — they're ingested differently, see below). Every chunk is stamped with a `document_type` from
 its root; `subfolders_as_type: true` lets an immediate subfolder override it
 (e.g. `knowledge_base/reference_test_cases/` becomes its own filterable type,
 no code change).
@@ -154,18 +168,23 @@ Chunking preserves structure — nothing unrelated ever shares a chunk:
   stripped before parsing rather than losing a 2 MB file to one padded field.
 - **TXT** (`extractors/text_extractor.py`): plain-text documents in
   `knowledge_base/`.
+- **JSON** (`extractors/json_extractor.py`): the converted Parameter
+  Configuration Guide. One parameter record = one chunk, led by its
+  identifier and title (`TBC137 | Restricted Speed`) so BM25 can return the
+  parameter a requirement names rather than its neighbours.
 
 Key files: `chunking.py` (normalisation, token budgets, metadata),
 `incremental.py` (fingerprint behind the unchanged-file skip),
 `embeddings.py` (BGE-M3 wrapper), `vector_store.py` (ChromaDB wrapper),
 `pipeline.py` (orchestration).
 
-### Static context: python_apis and track_data (`src/rag/static_context.py`)
+### Static context: python_apis, track_data and parameter_config (`src/rag/static_context.py`)
 
-`python_apis/` and `track_data/` are declared under `static_sources:` in
-`config/config.yaml`, parsed with the same extractors as above, but held in
-an in-process BM25-only index instead of ChromaDB — see the file's header
-comment for the reasoning. `static_api_top_k`/`static_track_top_k` in
+`python_apis/`, `track_data/` and `parameter_config/` are declared under
+`static_sources:` in `config/config.yaml`, parsed with the same extractors as
+above, but held in an in-process BM25-only index instead of ChromaDB — see
+the file's header comment for the reasoning.
+`static_api_top_k`/`static_track_top_k`/`static_parameter_top_k` in
 `config/rag_config.yaml` control how many chunks of each are pulled per
 request.
 
@@ -183,11 +202,29 @@ the pair regardless of what either file states internally. Together they are
 ~5,000 BM25 chunks and about 11s of the backend's startup; the XML is roughly
 four fifths of that.
 
-Which subdivision a request searches is decided by **one** thing: the
+Track data reaches **only** the script call. A datasheet description states
+the behaviour to verify, not the blocks it runs on, so test-case generation
+sends nothing from `track_data/` (its `track_subdivisions` in the response
+is always empty).
+
+Test-case generation does not retrieve from the embedded knowledge base at
+all — `TestCaseGenerator` is not given a `HybridRetriever`. Its only context
+is the parameter configuration guide's records
+(`data/parameter_config/`, via `StaticContextProvider.parameter_hits`/
+`parameter_context`): the records already carry everything a datasheet row
+asserts against (identifier, valid range, units, defaults). Those same
+records also stand in for the retrieved-chunk evidence confidence scoring
+needs — `retrieval` falls back to each hit's BM25 score (no cosine
+similarity exists for a keyword-only source), and `similarity_to_existing`
+has no existing-test-case chunks to compare against any more, so it is
+always dropped and its weight redistributed to `retrieval`/`grounding` (the
+same redistribution the "no existing test cases for this requirement" case
+already used). The script call is unaffected — it still pulls both
+parameter records and knowledge-base context (see "Output formats").
+
+Which subdivision the script call searches is decided by **one** thing: the
 subdivision picked in the UI (`subdivision` on the generate requests,
-`GET /api/track-subdivisions` for the list). The same value is sent again
-with the script call, so the script's hard-coded blocks match its
-datasheet's.
+`GET /api/track-subdivisions` for the list).
 
 There is deliberately no requirement → subdivision map any more. A stored
 map and a picker are two answers to the same question, and the one the user
@@ -240,6 +277,35 @@ points at it. Editing the folder now has no effect on generation until
 someone updates `config/prompts.yaml` to match — that is the intended
 trade.
 
+`parameter_config/` holds the Parameter Configuration Guide's tables as one
+JSON record per parameter, produced from the PDF by
+`scripts/convert_parameter_guide.py` (`extractors/json_extractor.py` renders
+each record back into a chunk that leads with the identifier and title). The
+guide is the authority for TBC/CFG/THE values, their units, valid ranges,
+North American defaults and owning railroad — exactly the values a test case
+asserts against and a boundary case is written from. Left as a PDF it chunks
+into prose, so asking about `TBC137` returns whatever share of a guide page
+the chunk boundary happened to catch, with its neighbours' ranges alongside
+it; one record per parameter returns that parameter.
+
+Retrieval of those records is not BM25 alone. Any TBC/CFG/THE identifier the
+requirement states is looked up by exact id in `static_context.py` and put at
+the head of the parameter block, then BM25 fills the remaining `static_parameter_top_k`
+slots. That lookup is the guarantee; the identifier boost below is what makes
+the ranking itself sound.
+
+The PDF deliberately **stays** in `data/knowledge_base/` and stays embedded.
+The two are not redundant: the records answer "what is TBC137's valid range",
+the embedded prose answers the questions the surrounding sections explain —
+but only for the script call. Both generations pull the records; only the
+script call also retrieves the embedded prose. The datasheet call does not
+run the embedded knowledge base's hybrid retrieval at all (see "Hybrid
+retrieval" below).
+
+The conversion is a build step, not a request-time parse: nothing reads the
+PDF while the app runs. Re-run the script for a new revision of the guide,
+then restart the server.
+
 ### Requirement -> folder mapping (`src/rag/caf_mapping.py`)
 
 `data/CAF.xlsx` (the Change Approval Form export: `Sr No`, `Section`,
@@ -278,9 +344,25 @@ fused with reciprocal rank fusion (RRF, combines by rank not score):
 - **Keyword** (BM25) — catches exact identifiers dense search blurs (`TBC137`
   vs `TBC139`, block `1015` vs `1025`, API names).
 
+Query tokens that mix letters and digits (`tbc137`, `l2r7983`, `iv132`) are
+counted `_IDENTIFIER_BOOST` times on the **query** side only
+(`boost_identifiers` in `keyword_index.py`; the corpus is tokenized plainly).
+BM25 sums a contribution per query token, so without this a requirement that
+names `TBC137` once but repeats "speed", "restricted" and "enforce" throughout
+ranks records matching those common words above the one record it names —
+measured on a one-sentence requirement, TBC137 came 13th of the parameter
+records and never reached the prompt; boosted, it is 1st. Deduplicating the
+query instead was tried and is worse (18th): the repeated prose is evidence
+too. Bare numbers are deliberately not boosted — the corpus is full of them
+and IDF already separates a rare one.
+
 `dense_weight`/`keyword_weight` in `config/rag_config.yaml` tune the balance;
 0 disables an arm. BM25 index is built in-process from the collection and
 rebuilt whenever chunk count changes.
+
+This pass runs only for the script call now. Test-case generation
+(`TestCaseGenerator`) is not constructed with a `HybridRetriever` at all —
+see "Static context" and "parameter_config" above for what replaces it.
 
 ### Confidence scoring (`src/rag/confidence.py`)
 
@@ -289,15 +371,17 @@ Three component scores + weighted overall (`confidence_weights` in
 
 | Component | Measures | Low means |
 |---|---|---|
-| `retrieval` | Mean cosine of strongest retrieved chunks | KB doesn't really cover this requirement |
+| `retrieval` | Mean cosine of strongest retrieved chunks (or, for a keyword-only source like parameter records, each hit's BM25 score relative to the strongest one) | Retrieved context doesn't really cover this requirement |
 | `grounding` | How much row vocabulary/identifiers trace to retrieved context | Model may have invented a param/block/API name |
 | `similarity_to_existing` | Cosine vs. closest existing test case for same requirement | Genuinely new boundary case, or fabrication |
 
 `similarity_to_existing` matches are reported by ID (e.g. `L2R7983_1`) for
 direct reviewer comparison. When a requirement has no existing test cases,
-that axis is dropped and its weight redistributed (not counted as zero).
-Rows below `confidence_review_threshold` are flagged in the UI and the
-`Needs_Review` export column.
+that axis is dropped and its weight redistributed (not counted as zero) —
+for test-case generation this is now the normal case, since its only
+retrieved chunks are parameter records, which are never existing test
+cases. Rows below `confidence_review_threshold` are flagged in the UI and
+the `Needs_Review` export column.
 
 ### Output formats (`src/rag/exporters.py`)
 
@@ -391,7 +475,8 @@ Every concrete value in a generated artefact — subdivision, block, milepost,
 switch, signal, TBC parameter, API name — must come from a real source for
 *that* requirement: track values from `data/track_data/` (via
 `static_context.py`), parameters/message names from `data/knowledge_base/`,
-API names/kwargs from `data/python_apis/`. `data/Examples/` fixes shape only;
+API names/kwargs from `data/python_apis/`, TBC/CFG/THE values, units and
+valid ranges from `data/parameter_config/`. `data/Examples/` fixes shape only;
 copying one of its concrete values into a new artefact is a defect. A
 prompt can only obey "don't guess" if it actually contains a real source for
 the values it asks for — this is why script generation runs its own
@@ -512,6 +597,7 @@ resort, not the first: that is the grounding the output depends on.
 | `config/config.yaml` | `sources` (embedded), `static_sources` (BM25-only), `examples_dir` (design-time only), chunk sizes, PDF heuristics, embedding model, ChromaDB location |
 | `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits/timeouts, `max_test_cases` ceiling, confidence weights/threshold |
 | `config/prompts.yaml` | Every system and user prompt |
+| `data/parameter_config/*.json` | TBC/CFG/THE parameter records — generated from the guide PDF by `scripts/convert_parameter_guide.py` |
 | `config/caf_mapping.json` | Requirement → feature, i.e. the datasheet's `Folder` column — generated from `data/CAF.xlsx` by `scripts/convert_caf_mapping.py` |
 | `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, `RAG_RETRIEVAL_WORKERS`, Ollama host override, frontend dev-server port/proxy target |
 
@@ -544,11 +630,13 @@ config/                     config.yaml, rag_config.yaml, prompts.yaml, caf_mapp
 data/knowledge_base/         PDF · XLSX · TXT (embedded)
 data/python_apis/            PY · PYI (static, BM25-only)
 data/track_data/<subdiv>/    HTML report + -subdiv.xml (static, BM25-only)
+data/parameter_config/       parameter records (static, BM25-only); generated, not hand-edited
 data/Examples/               reference triples; design-time source for the prompts.yaml templates, not read at request time
 data/CAF.xlsx                requirement -> feature (Folder) source; converted, not read at request time
 scripts/convert_caf_mapping.py   data/CAF.xlsx -> config/caf_mapping.json
+scripts/convert_parameter_guide.py  guide PDF -> data/parameter_config/
 src/kb_ingestion/
-  extractors/                 one parser per format (pdf, xlsx, python, html, xml, text)
+  extractors/                 one parser per format (pdf, xlsx, python, html, xml, text, json)
   chunking.py                 normalisation, token budgets, chunk metadata
   incremental.py               fingerprint behind the unchanged-file skip
   embeddings.py                BGE-M3 wrapper
@@ -557,7 +645,7 @@ src/kb_ingestion/
 src/rag/
   requirement_parser.py        requirement ID + functional area
   caf_mapping.py                requirement -> feature (the Folder column), from config/caf_mapping.json
-  static_context.py             python_apis/track_data, BM25-only, never embedded
+  static_context.py             python_apis/track_data/parameter_config, BM25-only, never embedded
   keyword_index.py               BM25 arm over the embedded collection
   retriever.py                   hybrid search + RRF + context assembly
   cache.py                       embedding / result caches

@@ -31,6 +31,7 @@ class Extractor(Protocol):
 
 
 from .html_extractor import HTMLTrackDataExtractor  # noqa: E402
+from .json_extractor import ParameterJSONExtractor  # noqa: E402
 from .pdf_extractor import PDFExtractor  # noqa: E402
 from .python_extractor import PythonExtractor  # noqa: E402
 from .text_extractor import TextExtractor  # noqa: E402
@@ -55,6 +56,9 @@ EXTRACTORS_BY_SUFFIX: dict[str, Extractor] = {
     # The `-subdiv.xml` filed next to each track report. Same subdivision,
     # different half of the export.
     ".xml": XMLTrackDataExtractor(),
+    # The parameter configuration guide, converted from its PDF by
+    # scripts/convert_parameter_guide.py into one record per parameter.
+    ".json": ParameterJSONExtractor(),
 }
 
 __all__ = [
@@ -63,6 +67,7 @@ __all__ = [
     "Extractor",
     "HTMLTrackDataExtractor",
     "XMLTrackDataExtractor",
+    "ParameterJSONExtractor",
     "PDFExtractor",
     "PythonExtractor",
     "TextExtractor",

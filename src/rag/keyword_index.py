@@ -26,6 +26,29 @@ def tokenize(text: str) -> list[str]:
     return [t.lower() for t in _TOKEN_RE.findall(text or "")]
 
 
+# How many times an identifier token counts on the query side. BM25 sums a
+# contribution per query token, so a requirement that names TBC137 once but
+# says "speed", "restricted" and "enforce" throughout scores records matching
+# those common words several times above the one record it actually names —
+# TBC137's own record came 13th on a one-sentence requirement. Counting an
+# identifier as several occurrences of itself restores the balance without
+# touching the corpus or discarding the prose terms, which carry the rest of
+# the requirement's meaning (deduplicating the query instead makes it worse:
+# the repeated prose is also evidence).
+_IDENTIFIER_BOOST = 3
+
+
+def _is_identifier(token: str) -> bool:
+    return any(c.isdigit() for c in token) and any(c.isalpha() for c in token)
+
+
+def boost_identifiers(tokens: list[str]) -> list[str]:
+    boosted: list[str] = []
+    for token in tokens:
+        boosted.extend([token] * (_IDENTIFIER_BOOST if _is_identifier(token) else 1))
+    return boosted
+
+
 @dataclass(frozen=True)
 class KeywordHit:
     chunk_id: str
@@ -138,7 +161,7 @@ class KeywordIndex:
         if corpus is None:
             return []
 
-        tokens = tokenize(query)
+        tokens = boost_identifiers(tokenize(query))
         if not tokens:
             return []
 

@@ -45,10 +45,9 @@ export function lookupFolder({ requirementText, signal }) {
 // No test-case count is sent: how many cases a requirement needs is derived
 // from the requirement itself, server-side. `refresh` asks the server to run
 // the model again instead of replaying an identical earlier result.
-export function generateTestCases({ requirementText, topK, subdivision, refresh = false }) {
+export function generateTestCases({ requirementText, subdivision, refresh = false }) {
   return json("/test-cases", {
     requirement_text: requirementText,
-    top_k: topK,
     // null, not "", for "no subdivision chosen" — the backend reads null as
     // "send no track data". The UI requires a pick, so this is a guard
     // rather than a normal path.

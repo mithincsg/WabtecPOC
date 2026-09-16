@@ -105,14 +105,25 @@ class ConfidenceScorer:
 
         The top few rather than all of them: a long tail of weak chunks is
         normal and shouldn't drag the score down, but if even the best
-        matches are weak then nothing in the knowledge base really covers
-        this requirement.
+        matches are weak then nothing retrieved really covers this
+        requirement.
         """
         similarities = [c.similarity for c in chunks if c.similarity is not None]
-        if not similarities:
+        if similarities:
+            best = sorted(similarities, reverse=True)[:3]
+            return _clamp(sum(best) / len(best))
+        # Keyword-only chunks (parameter records) carry no cosine similarity.
+        # Score each hit's BM25 score relative to the strongest one in this
+        # set instead — the same "how strong were the best matches" idea, on
+        # a source that doesn't produce a 0-1 similarity of its own.
+        bm25_scores = [c.bm25_score for c in chunks if c.bm25_score is not None]
+        if not bm25_scores:
             return 0.0
-        best = sorted(similarities, reverse=True)[:3]
-        return _clamp(sum(best) / len(best))
+        top = max(bm25_scores)
+        if top <= 0:
+            return 0.0
+        best = sorted(bm25_scores, reverse=True)[:3]
+        return _clamp(sum(s / top for s in best) / len(best))
 
     @staticmethod
     def _context_vocabulary(

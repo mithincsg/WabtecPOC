@@ -92,8 +92,6 @@ class GenerateTestCasesRequest(BaseModel):
     """
 
     requirement_text: str = Field(min_length=1)
-    top_k: int | None = Field(default=None, ge=1, le=50)
-    doc_types: list[str] | None = None
     # The subdivision folder under data/track_data to draw track values
     # from, as picked in the UI. This is the only thing that selects track
     # data; None means no track data is sent to the model at all, which is
@@ -116,10 +114,9 @@ class FolderLookupRequest(BaseModel):
 class FolderLookupResponse(BaseModel):
     requirement_id: str | None = None
     folder: str = ""
-    # "caf" when data/CAF.xlsx maps this requirement to a feature, "heading"
-    # when the folder was read out of the requirement text instead, "" when
-    # nothing matched. The UI says which, so an unmapped requirement is
-    # visible rather than silently folder-less.
+    # "caf" when data/CAF.xlsx maps this requirement to a feature, "" when
+    # it doesn't — an unmapped requirement gets an empty folder rather than
+    # a guess, and the UI shows that plainly instead of silently filling it.
     folder_source: str = ""
     section: str = ""
 

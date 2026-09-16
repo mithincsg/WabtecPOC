@@ -151,12 +151,33 @@ class HybridRetriever:
         ]
 
         chunks = [c for group in self._search_all(query_text, passes) for c in group]
+        context = self.build_context(chunks)
         result = RetrievalResult(
             chunks=chunks,
-            context=self.build_context(chunks),
+            context=context,
             dense_hits=sum(1 for c in chunks if "dense" in c.matched_by),
             keyword_hits=sum(1 for c in chunks if "keyword" in c.matched_by),
         )
+        logger.info(
+            "Retrieval (knowledge_base): %d chunk(s) -> %d dense, %d keyword hit(s), "
+            "%d chars of context (doc_types=%s, top_k=%d)",
+            len(chunks),
+            result.dense_hits,
+            result.keyword_hits,
+            len(context),
+            doc_types or "(all)",
+            top_k,
+        )
+        for index, chunk in enumerate(chunks, start=1):
+            logger.debug(
+                "  [%d] %s (%s) score=%.4f sim=%s bm25=%s",
+                index,
+                chunk.source_label,
+                "+".join(chunk.matched_by),
+                chunk.score,
+                f"{chunk.similarity:.3f}" if chunk.similarity is not None else "-",
+                f"{chunk.bm25_score:.2f}" if chunk.bm25_score is not None else "-",
+            )
         self._results.put(cache_key, result)
         return result
 

@@ -210,9 +210,20 @@ class OllamaClient:
             # generation and fails in the parser.
             payload["format"] = json_schema
 
+        logger.info(
+            "Calling %s at %s (system=%d chars, user=%d chars%s; prompt token count "
+            "is reported by Ollama once the call finishes)",
+            self.config.model,
+            self.config.ollama_host,
+            len(system_prompt),
+            len(user_prompt),
+            ", schema-constrained" if json_schema is not None else "",
+        )
         started = time.monotonic()
         try:
-            raw, thought_chars, stopped_early = self._stream_chat(payload, started)
+            raw, thought_chars, stopped_early, prompt_tokens, completion_tokens = (
+                self._stream_chat(payload, started)
+            )
         except LLMResponseError as exc:
             # An Ollama too old for structured output rejects `format` as a
             # bad request. Losing the constraint is far better than losing
@@ -225,7 +236,9 @@ class OllamaClient:
                 exc,
             )
             payload.pop("format")
-            raw, thought_chars, stopped_early = self._stream_chat(payload, started)
+            raw, thought_chars, stopped_early, prompt_tokens, completion_tokens = (
+                self._stream_chat(payload, started)
+            )
         content = strip_reasoning(raw)
         elapsed = time.monotonic() - started
 
@@ -247,23 +260,33 @@ class OllamaClient:
             )
 
         logger.info(
-            "%s produced %d chars in %.1fs%s",
+            "%s produced %d chars (%s completion tokens, %s prompt tokens) in %.1fs%s",
             self.config.model,
             len(content),
+            completion_tokens if completion_tokens is not None else "?",
+            prompt_tokens if prompt_tokens is not None else "?",
             elapsed,
             " (cut off at the total budget)" if stopped_early else "",
         )
         return _rejoin_prefill(prefill, content)
 
-    def _stream_chat(self, payload: dict, started: float) -> tuple[str, int, bool]:
+    def _stream_chat(
+        self, payload: dict, started: float
+    ) -> tuple[str, int, bool, int | None, int | None]:
         """Reads a streamed /api/chat response.
 
         Returns the answer text, how many characters of separate `thinking`
-        the model streamed alongside it, and whether it was cut short by the
-        total budget. A reasoning model can emit `message.thinking` for
-        minutes before its first `message.content` token, so counting that is
-        what tells a thinking model apart from a silent one - both look like
-        an empty answer otherwise.
+        the model streamed alongside it, whether it was cut short by the
+        total budget, and the prompt/completion token counts Ollama reports
+        on its final event (`prompt_eval_count`/`eval_count`) — the actual
+        count for whatever model is configured, not a guess from character
+        length, so this keeps working across a model swap with no code
+        change. Either is None when the stream ended before that event (a
+        stall, a dropped connection, the total budget).
+        A reasoning model can emit `message.thinking` for minutes before its
+        first `message.content` token, so counting that is what tells a
+        thinking model apart from a silent one - both look like an empty
+        answer otherwise.
         A stall — no token for `stall_timeout_seconds` — is the transport's
         read timeout, so it arrives here as an exception rather than a short
         read.
@@ -273,6 +296,8 @@ class OllamaClient:
         chunks: list[str] = []
         thought_chars = 0
         last_log = started
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
 
         try:
             with self._open_stream("/api/chat", payload) as response:
@@ -297,6 +322,8 @@ class OllamaClient:
                         print(piece, end="", flush=True)
                     thought_chars += len(message.get("thinking") or "")
                     if event.get("done"):
+                        prompt_tokens = event.get("prompt_eval_count")
+                        completion_tokens = event.get("eval_count")
                         print()
                         break
 
@@ -312,7 +339,7 @@ class OllamaClient:
                             budget,
                             sum(len(c) for c in chunks),
                         )
-                        return "".join(chunks), thought_chars, True
+                        return "".join(chunks), thought_chars, True, None, None
                     if now - last_log >= _PROGRESS_LOG_SECONDS:
                         last_log = now
                         logger.info(
@@ -338,7 +365,7 @@ class OllamaClient:
             # whatever it managed to write is still worth salvaging.
             if chunks:
                 logger.warning("Ollama stream ended early: %s", exc)
-                return "".join(chunks), thought_chars, True
+                return "".join(chunks), thought_chars, True, None, None
             raise LLMConnectionError(
                 f"Could not reach Ollama at {self.config.ollama_host}. Start it with "
                 f"`ollama serve`, and make sure `ollama pull {self.config.model}` has run."
@@ -346,12 +373,12 @@ class OllamaClient:
         except requests.RequestException as exc:
             if chunks:
                 logger.warning("Ollama stream failed part-way: %s", exc)
-                return "".join(chunks), thought_chars, True
+                return "".join(chunks), thought_chars, True, None, None
             raise LLMConnectionError(
                 f"The request to Ollama at {self.config.ollama_host} failed: {exc}"
             ) from exc
 
-        return "".join(chunks), thought_chars, False
+        return "".join(chunks), thought_chars, False, prompt_tokens, completion_tokens
 
     def _think_flag(self) -> bool | None:
         """What to send as `think` for the configured model, or None to omit.

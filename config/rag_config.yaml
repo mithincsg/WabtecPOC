@@ -28,11 +28,13 @@ track_data_doc_type: track_data
 track_data_top_k: 4          # track-feature chunks added on top of top_k
 
 # --- Static context (config/config.yaml: static_sources, examples_dir) ---
-# python_apis and track_data are BM25-only here (never embedded — see
-# config.yaml), so these are keyword-match counts, not fused-ranking ones.
+# python_apis, track_data and parameter_config are BM25-only here (never
+# embedded — see config.yaml), so these are keyword-match counts, not
+# fused-ranking ones.
 static_api_top_k: 4          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-feature chunks per request (still
                               # filtered to the requirement's subdivisions)
+static_parameter_top_k: 6    # TBC/CFG/THE parameter records per request
 
 # data/Examples/ is no longer sent at request time — its shape is distilled
 # into the house wording pattern and house skeleton in config/prompts.yaml,

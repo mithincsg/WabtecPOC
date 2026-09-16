@@ -147,14 +147,13 @@ class Services:
             with self._lock:
                 if self._test_case_generator is None:
                     self._test_case_generator = TestCaseGenerator(
-                        retriever=self.retriever,
                         llm_client=self.llm_client,
                         prompts=self.prompts,
                         scorer=ConfidenceScorer(
                             self.embedder, self.settings.confidence
                         ),
                         static_context=self.static_context,
-                        static_track_top_k=self.settings.retrieval.static_track_top_k,
+                        static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
                         caf_mapping=self.caf_mapping,
                     )
         return self._test_case_generator
@@ -172,6 +171,7 @@ class Services:
                         static_context=self.static_context,
                         static_api_top_k=self.settings.retrieval.static_api_top_k,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
+                        static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
                     )
         return self._script_generator
 
