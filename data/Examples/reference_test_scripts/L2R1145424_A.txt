@@ -1,0 +1,116 @@
+# This Python file uses the following encoding: utf-8
+"""Information contained in this document is proprietary and confidential to,
+and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland"""
+from Common.WCR_public import *
+
+
+def main():
+    run_test.set_execution_type("Automation")
+    run_test.set_test_case_function_table({"Positive": "handle_test_case"})
+    run_test.enable_optional_sim("CN_OFFICE")
+    run_test.run()
+
+
+def handle_test_case(data_sheet=None):
+    case = data_sheet["S_no"]
+
+    # Test Scenario 1: Onboard sets TBC137mph speed for 'HEO restricted speed becoming located signal target' from
+    # beginning of the train’s calculated route where country of operation is not Canada
+    if case == 1:
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC137', "value": 17})
+        wcr_debug_client.set_tbc({"scac": 'COMMON', "parameter": 'TBC173', "value": 2})
+        #  Set Location
+        wcr_track.set_track_to_use(
+            {'TrackType': 'AUX', 'subdivID': 8109, 'APPEND_TRACKS': False, 'sub_folder': "AUX_ETC//AUX_UP"})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8109, "track_group": "Main1", "point": "W1.4", "direction": "decreasing", "stealth": True})
+        wcr_state.set_onboard_state({'Next_State': 'Active'})
+        # Verify Output
+        wcr_ptc.verify_target_details({"TGT_TYPE": "SIGNAL-BECOMING LOCATED", "TGT_START_LOC_BLOCKID": 2001,
+                                       "TGT_END_LOC_BLOCKID": 2001, "TGT_START_LOC_OFFSET": 26401,
+                                       "TGT_END_LOC_OFFSET": 0, "TGT_START_LOC_DISTID": 8109,
+                                       "TGT_END_LOC_DISTID": 8109, "TGT_SPEED_LIMIT": 17, "TGT_SPEED_APPLICABILITY": 1,
+                                       "expected_result": True})
+        # Cleanup Activity
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+        wcr_debug_client.set_default_tbc({'scac': "UP", 'parameter': "TBC137"})
+        wcr_debug_client.set_default_tbc({'scac': "COMMON", 'parameter': "TBC173"})
+
+    # Test Scenario 2: Onboard sets TBC137mph speed for 'HEO restricted speed unknown signal target' from beginning of
+    # the train’s calculated route where country of operation is not Canada
+    elif case == 2:
+        wcr_debug_client.set_tbc({"scac": 'CN', "parameter": 'TBC137', "value": 20})
+        wcr_debug_client.set_tbc({"scac": 'COMMON', "parameter": 'TBC172', "value": 8})
+        wcr_debug_client.set_tbc({"scac": 'COMMON', "parameter": 'TBC173', "value": 2})
+        wcr_track.set_track_to_use(
+            {'TrackType': 'AUX', 'subdivID': 385, 'APPEND_TRACKS': False, 'sub_folder': "AUX_ETC//AUX_5"})
+        wcr_loco_sim.set_position(
+            {"sub_id": 385, "track_group": "Main", "point": 346.45, "direction": "decreasing", "stealth": True})
+        wcr_office_01030.set_length('185')
+        wcr_office_base.set_operating_railroad_data(["UP", "CN"])
+        wcr_office_base.set_employing_railroad_data("UP")
+        wcr_state.set_onboard_state({'Next_State': 'Active'})
+        # Send 1051
+        wcr_office_base.set_bos({"bos": 'CN'})
+        wcr_office_01051.reset_msg()
+        wcr_office_01051.set_instance(0)
+        wcr_office_01051.set_reason('New Authority')
+        wcr_office_01051.set_type('Track warrant')
+        wcr_office_01051.set_num(101)
+        wcr_office_01051.set_sub_id(385)
+        wcr_office_01051.segment_set_segment('Bidirectional')
+        wcr_office_01051.segment_set_from_to({"start": 3480607, "end": 3462446, "sub_id": 385, "track": 'Main'})
+        wcr_office_01051.send_msg()
+        wcr_wayside.set_signal({"sub_id": 385, "name": 85, "position": "UNKNOWN"})
+        # Verify Output
+        wcr_ptc.verify_target_details({"TGT_TYPE": "UNKNOWN SIGNAL", "TGT_START_LOC_BLOCKID": 28086,
+                                       "TGT_END_LOC_BLOCKID": 28077, "TGT_START_LOC_OFFSET": 1907,
+                                       "TGT_END_LOC_OFFSET": 13704, "TGT_START_LOC_DISTID": 385,
+                                       "TGT_END_LOC_DISTID": 385, "TGT_SPEED_LIMIT": 20, "TGT_SPEED_APPLICABILITY": 1,
+                                       "expected_result": True})
+        wcr_loco_sim.drive_and_stop_at_milepost(
+            {"speed": 17, "sub_id": 385, "track_group": "Main", "max_wait_seconds": 180, "point": "346.2"})
+        wcr_display.press_key({"key": "F6", "Key_Text": 'Verified'})
+        wcr_loco_sim.drive_and_stop_at_milepost(
+            {"speed": 19, "sub_id": 385, "track_group": "Main", "max_wait_seconds": 1200, "point": "342"})
+        # Verify Output
+        wcr_ptc.verify_target_details({"TGT_TYPE": "UNKNOWN SIGNAL", "TGT_START_LOC_BLOCKID": 28084,
+                                       "TGT_END_LOC_BLOCKID": 28077, "TGT_START_LOC_OFFSET": 11469,
+                                       "TGT_END_LOC_OFFSET": 13704, "TGT_START_LOC_DISTID": 385,
+                                       "TGT_END_LOC_DISTID": 385, "TGT_SPEED_LIMIT": 20, "TGT_SPEED_APPLICABILITY": 1,
+                                       "expected_result": True})
+        # Cleanup Activity
+        wcr_state.set_onboard_to_cutout_via_1010_msg(scac='CN')
+        wcr_debug_client.set_default_tbc({'scac': "CN", 'parameter': "TBC137"})
+        wcr_debug_client.set_default_tbc({'scac': "COMMON", 'parameter': "TBC172"})
+        wcr_debug_client.set_default_tbc({'scac': "COMMON", 'parameter': "TBC173"})
+        wcr_wayside.set_signal({"sub_id": 385, "name": 85, "position": "CLEAR"})
+        wcr_office_01030.reset_msg()
+        wcr_office_base.set_bos({"bos": 'CN'})
+        wcr_office_01051.reset_msg()
+
+    # Test Scenario 3:Onboard sets TBC137mph speed for 'HEO restricted speed change in train orientation signal target'
+    # from beginning of the train’s calculated route where country of operation is not Canada
+    elif case == 3:
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC137', "value": 5})
+        wcr_track.set_track_to_use({"TrackType": "AUX", "subdivID": 8109, 'sub_folder': "AUX_ETC//V89_US_Ops_Subs",
+                                    "APPEND_TRACKS": False})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8109, "track_group": "Main1", "point": "W1.9", "direction": "decreasing", "stealth": True})
+        wcr_state.set_onboard_state({'Next_State': 'Active'})
+        wcr_loco_sim.set_reverser("reverse")
+        wcr_user_act.wait_duration({"wait_seconds": 10})
+        # Verify Output
+        wcr_ptc.verify_target_details({"TGT_TYPE": "SIGNAL-TRAIN ORIENT CHANGE", "TGT_START_LOC_BLOCKID": 2001,
+                                       "TGT_END_LOC_BLOCKID": 2001, "TGT_START_LOC_OFFSET": 0,
+                                       "TGT_END_LOC_OFFSET": 15840, "TGT_START_LOC_DISTID": 8109,
+                                       "TGT_END_LOC_DISTID": 8109, "TGT_SPEED_LIMIT": 5, "TGT_SPEED_APPLICABILITY": 1,
+                                       "expected_result": True})
+        # Cleanup Activity
+        wcr_loco_sim.set_reverser("Forward")
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+        wcr_debug_client.set_default_tbc({'scac': "UP", 'parameter': "TBC137"})
+
+
+if __name__ == "__main__":
+    main()

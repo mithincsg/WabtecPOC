@@ -1,0 +1,12 @@
+When the on-board segment has a calculated route for the train and 
+
+the on-board segment has a dataset for a work zone that is within TBC290 seconds of becoming effective or is already in effect and 
+CFG22 is disabled for the operating railroad that issued the dataset,
+the on-board segment shall generate a separate entire train zero (0) mph work zone target for each set of non-contiguous limits 
+
+that are defined in the dataset and 
+that are on the train’s calculated route and 
+that are on PTC track and
+that are not within the limits of any entire train maximum authorized speed PTC suspension target and
+where the far limit is in advance of the trailing edge of the train or less than the calculated position uncertainty behind the trailing edge of the train and
+which are not already covered by a target for the same work zone dataset. 

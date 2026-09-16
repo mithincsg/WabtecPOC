@@ -1,0 +1,396 @@
+# This Python file uses the following encoding: utf-8
+"""Information contained in this document is proprietary and confidential to,
+and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland"""
+from Common.WCR_public import *
+
+
+def main():
+    run_test.set_execution_type("Automation")
+    run_test.set_test_case_function_table({"Positive": "handle_test_case", "Negative": "handle_test_case"})
+    run_test.run()
+
+
+def handle_test_case(data_sheet=None):
+    case = data_sheet["S_no"]
+
+    # Pre-Condition
+    wcr_debug_client.log_verification()
+    wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'CFG22', "value": False})
+
+    # Test Scenarios
+    # Test Scenario 1
+    if case == 1:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 120})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 7.5,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 85000, 90000)
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 2749, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 2
+    elif case == 2:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 120})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 7.5,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(70000, 90000, 95000, 100000, True, 3)
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        wcr_user_act.wait_duration({"message": "Wait for Work Zone Target", "wait_seconds": 60})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 5564, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3009,
+             "TGT_START_LOC_OFFSET": 8245, "TGT_END_LOC_OFFSET": 247, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 3
+    elif case == 3:
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 7.898,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+
+        send_1041_msg(60000, 70000, 85000, 90000, True, 1)
+
+        wcr_user_act.wait_duration({"message": "Wait for Work Zone Target", "wait_seconds": 60})
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0, "LOC_RE_MILEPOST": 7.0029001236,
+             "expected_result": True, "req_verified": "L2R10673,LOC_RE_MILEPOST - Far limit \
+                                   is '0.0029' which is less than position uncertainty(0.0032 miles or 17 feet)"})
+
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 2749, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 4
+    elif case == 4:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 0})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 7.898,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+
+        send_1041_msg(60000, 70000, 85000, 90000, True, 1)
+
+        wcr_user_act.wait_duration({"message": "Wait for Work Zone Target", "wait_seconds": 60})
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0, "LOC_RE_MILEPOST": 7.0029001236,
+             "expected_result": True, "req_verified": "L2R10673,LOC_RE_MILEPOST - Far limit \
+                                   is '0.0029' which is less than position uncertainty(0.0032 miles or 17 feet)"})
+
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 2749, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 5
+    elif case == 5:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 3600})
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 6.8,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 80000, 90000, True, 62)
+
+        wcr_user_act.wait_duration({"message": "Wait for Work Zone Target", "wait_seconds": 120})
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 6
+    elif case == 6:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": -1})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 6.8,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 80000, 90000, True, 11)
+
+        wcr_user_act.wait_duration({"message": "Wait for Work Zone Target", "wait_seconds": 60})
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 7
+    elif case == 7:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 3601})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 6.8,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 80000, 90000, True, 11)
+
+        wcr_user_act.wait_duration({"message": "Wait for Work Zone Target", "wait_seconds": 60})
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # Test Scenario 8
+    elif case == 8:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 120})
+
+        wcr_loco_sim.set_position({'direction': 'INCREASING', 'point': 20.898, 'track_group': 'Main1',
+                                   'sub_id': 8214, 'stealth': True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg_ptc()
+
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "PTC SUSPENSION", "TGT_START_LOC_BLOCKID": 2008, "TGT_END_LOC_BLOCKID": 2008,
+             "TGT_START_LOC_OFFSET": 10969, "TGT_END_LOC_OFFSET": 21560, "TGT_START_LOC_DISTID": 8214,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673,ptc suspension"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "PTC SUSPENSION", "TGT_START_LOC_BLOCKID": 2008, "TGT_END_LOC_BLOCKID": 2008,
+             "TGT_START_LOC_OFFSET": 22061, "TGT_END_LOC_OFFSET": 22674, "TGT_START_LOC_DISTID": 8214,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673,ptc suspension"})
+
+        wcr_display.press_key({"key": "F3", "Key_Text": "Acknowledge"})
+        wcr_display.press_key({"key": "F6", "Key_Text": "Confirmed"})
+
+        send_1041_msg(180000, 201000, 201900, 203000)
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 2008, "TGT_END_LOC_BLOCKID": 2008,
+             "TGT_START_LOC_OFFSET": 10969, "TGT_END_LOC_OFFSET": 21560, "TGT_START_LOC_DISTID": 8214,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 2008, "TGT_END_LOC_BLOCKID": 2008,
+             "TGT_START_LOC_OFFSET": 22061, "TGT_END_LOC_OFFSET": 22674, "TGT_START_LOC_DISTID": 8214,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+
+    # Test Scenario 9
+    elif case == 9:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 120})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 6.8,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 650000, 90000)
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+
+    # Test Scenario 10
+    elif case == 10:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 120})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 6.8,
+                                   "direction": 'increasing', "stealth": True})
+
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 70000, 90000)
+
+        wcr_debug_client.log_verification({'keyword': '|MDR|2|UP|SU|', 'expected_result': False,
+                                           "req_verified": "L2R10673, verify not within the limits of any entire train"
+                                                           "maximum authorized speed PTC suspension target"})
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+
+    # Test Scenario 11
+    elif case == 11:
+
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": 'TBC290', "value": 120})
+
+        wcr_loco_sim.set_position({"sub_id": 8108, "track_group": 'Main2', "point": 7.9,
+                                   "direction": 'increasing', "stealth": True})
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+        send_1041_msg(60000, 70000, 80000, 90000)
+
+        # Output Verification
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3006, "TGT_END_LOC_BLOCKID": 3006,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5564, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": False, "req_verified": "L2R10673"})
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": "WORK ZONE", "TGT_START_LOC_BLOCKID": 3008, "TGT_END_LOC_BLOCKID": 3008,
+             "TGT_START_LOC_OFFSET": 0, "TGT_END_LOC_OFFSET": 5498, "TGT_START_LOC_DISTID": 8108,
+             "TGT_SPEED_LIMIT": 0, "TGT_SPEED_APPLICABILITY": 0,
+             "expected_result": True, "req_verified": "L2R10673"})
+
+    # cleanup
+    wcr_office_01041.reset_msg()
+    wcr_debug_client.set_default_tbc({'scac': "UP", 'parameter': "CFG22"})
+    wcr_debug_client.set_default_tbc({'scac': "UP", 'parameter': "TBC290"})
+    set_ob_to_cutout()
+
+
+# User Defined Functions
+def send_1041_msg_ptc():
+    wcr_office_01040.set_num(108)
+    wcr_office_01040.send_msg()
+    wcr_office_base.reset_msg(2042)
+    wcr_office_01041.set_instance(1)
+    wcr_office_01041.set_type('PTC Suspension')
+    wcr_office_01041.set_displayable_num(108)
+    wcr_office_01041.set_num(108)
+    wcr_office_01041.set_sub_id(8214)
+    # send_1041_msg(180000, 201000, 201900, 203000)
+    wcr_office_01041.set_segment(
+        {"start": 180000, "end": 201000, "sub_id": 8214, "track": 'Main1', "all_track_flag": False})
+    wcr_office_01041.set_segment(
+        {"start": 201900, "end": 203000, "sub_id": 8214, "track": 'Main1', "all_track_flag": False})
+    wcr_office_01041.set_text_line('PTC Suspension')
+    wcr_office_01041.send_msg()
+
+
+def send_1041_msg(startmp=None, endmp=None, startmp1=None, endmp1=None, effective=None, effectivetime=None):
+    wcr_office_01041.set_instance('0')
+    wcr_office_01041.set_displayable_num(101)
+    wcr_office_01041.set_num(101)
+    wcr_office_01041.set_type('Work zone')
+    wcr_office_01041.set_sub_id(8108)
+    # wcr_office_01041.set_restriction( {"head_end":headEnd,"restricted":False,"speed":0,"type":'Freight' } )
+    wcr_office_01041.set_segment({"end": endmp, "start": startmp, "sub_id": 8108, "track": 'Main2'})
+    wcr_office_01041.set_segment({"end": endmp1, "start": startmp1, "sub_id": 8108, "track": 'Main2'})
+    if effective is True:
+        wcr_office_01041.set_effective_timestamp({"minute": effectivetime, "direction": '+'})
+    wcr_office_01041.send_msg()
+
+
+def set_ob_to_cutout():
+    wcr_office_01010.set_bos({"bos": 'UP'})
+    wcr_office_01010.reset_msg()
+    wcr_office_01010.set_reason('Command locomotive system state to Non-controlling')
+    wcr_office_base.send_msg(1010)
+    wcr_office_01010.set_reason('Confirm receipt of 02010 message')
+
+
+if __name__ == "__main__":
+    main()

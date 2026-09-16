@@ -12,7 +12,7 @@ venv/
 # Proprietary source documents (I-ETMS specs, WCR API stubs, track reports,
 # reference examples) — never committed. Each machine points config.yaml at
 # its own copy; see README for how to obtain them.
-data/
+
 
 # Rebuildable from data/ by scripts/run_ingestion.py
 chroma_db/

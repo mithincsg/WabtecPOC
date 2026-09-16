@@ -1,0 +1,244 @@
+# This Python file uses the following encoding: utf-8
+"""Information contained in this document is proprietary and confidential to,
+and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland"""
+from Common.WCR_public import *
+
+
+def main():
+    run_test.set_execution_type("Automation")
+    run_test.set_test_case_function_table({"Positive": "handle_test_case", "Negative": "handle_test_case"})
+    run_test.run()
+
+
+def handle_test_case(data_sheet=None):
+    global case
+    case = data_sheet["S_no"]
+    # Pre-Condition
+    trk_fldr = 'AUX_23' if case == 9 else 'AUX_22'
+    wcr_track.set_track_to_use(
+        {'TrackType': 'AUX', 'APPEND_TRACKS': False, 'subdivID': 8880, 'sub_folder': trk_fldr})
+    # Test Scenarios - TBC137 > Block Restricted Speed
+    # Test Scenario 1 Block Level Generic Restricted Speed 10MPH
+    if case == 1:
+        # Test Scenario 1 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 13})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 11.2, "direction": "Increasing", "stealth": True})
+        img, spd = "RST SPD NOT EXCEEDING 10 MPH", 12
+        blck_target, sbdv_target = ["BLOCK", 1015, 1015, 0, 2483, 10], ["SUBDIV", 1011, 1020, 0, 29545, 13]
+
+    # Test Scenario 2 Block Level Tonnage Restricted Speed - Decreasing 7 MPH
+    elif case == 2:
+        # Test Scenario 2 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 9})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 22, "direction": "Decreasing", "stealth": True})
+        wcr_office_01030.set_trailing_tonnage(7500)
+        img, spd = "RST SPD NOT EXCEEDING 7 MPH", 9
+        blck_target, sbdv_target = ["BLOCK", 1025, 1025, 287, 0, 7], ["SUBDIV", 1030, 1020, 54623, 0, 9]
+
+    # Test Scenario 3 Block Level TPOB Restricted Speed 16MPH
+    elif case == 3:
+        # Test Scenario 3 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 18})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 26, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_operative_brakes(7)
+        img, spd = "RST SPD NOT EXCEEDING 16 MPH", 18
+        blck_target, sbdv_target = ["BLOCK", 1030, 1030, 0, 22988, 16], ["SUBDIV", 1025, 1030, 0, 54623, 18]
+
+    # Test Scenario 4 Block Level Axle Count Restricted Speed 13MPH
+    elif case == 4:
+        # Test Scenario 4 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 16})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 62, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_axles(55)
+        img, spd = "RST SPD NOT EXCEEDING 13 MPH", 15
+        blck_target, sbdv_target = ["BLOCK", 1037, 1037, 0, 57747, 13], ["SUBDIV", 1036, 1037, 0, 66559, 16]
+
+    # Test Scenarios - TBC137 < Block Restricted Speed
+    # Test Scenario 5 Block Level Generic Restricted Speed 10MPH
+    elif case == 5:
+        # Test Scenario 5 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 8})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 11.2, "direction": "Increasing", "stealth": True})
+        img, spd = "MAX SPEED RST SPD", 10
+        blck_target, sbdv_target = ["BLOCK", 1015, 1015, 0, 2483, 8], ["SUBDIV", 1011, 1020, 0, 29545, 8]
+
+    # Test Scenario 6 Block Level Tonnage Restricted Speed - Decreasing 7 MPH
+    elif case == 6:
+        # Test Scenario 6 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 2})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 22, "direction": "Decreasing", "stealth": True})
+        wcr_office_01030.set_trailing_tonnage(7500)
+        img, spd = "MAX SPEED RST SPD", 5
+        blck_target, sbdv_target = ["BLOCK", 1025, 1025, 287, 0, 2], ["SUBDIV", 1030, 1020, 54623, 0, 2]
+
+    # Test Scenario 7 Block Level TPOB Restricted Speed 16MPH
+    elif case == 7:
+        # Test Scenario 7 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 13})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 26, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_operative_brakes(7)
+        img, spd = "MAX SPEED RST SPD", 15
+        blck_target, sbdv_target = ["BLOCK", 1030, 1030, 0, 22988, 13], ["SUBDIV", 1025, 1030, 0, 54623, 13]
+
+    # Test Scenario 8 Block Level Axle Count Restricted Speed 13MPH
+    elif case == 8:
+        # Test Scenario 8 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 11})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 62, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_axles(55)
+        img, spd = "MAX SPEED RST SPD", 13
+        blck_target, sbdv_target = ["BLOCK", 1037, 1037, 0, 57747, 11], ["SUBDIV", 1036, 1037, 0, 66559, 11]
+
+    # Test Scenarios - TBC137 > Track Restricted Speed
+    # Test Scenario 9 Track Level Generic Restricted Speed 19MPH
+    elif case == 9:
+        # Test Scenario 9 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 20})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.3, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_operative_brakes(7)
+        img, spd = "RST SPD NOT EXCEEDING 16 MPH", 18
+        sbdv_target = ["SUBDIV", 1001, 1015, 0, 2483, 16]
+
+    # Test Scenario 10 Track Level Tonnage Restricted Speed - Decreasing 17 MPH
+    elif case == 10:
+        # Test Scenario 10 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 20})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 6, "direction": "Decreasing", "stealth": True})
+        wcr_office_01030.set_trailing_tonnage(7500)
+        img, spd = "RST SPD NOT EXCEEDING 17 MPH", 19
+        sbdv_target = ["SUBDIV", 1011, 1001, 20828, 0, 17]
+
+    # Test Scenario 11 Track Level TPOB Restricted Speed 16MPH
+    elif case == 11:
+        # Test Scenario 11 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 19})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.3, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_operative_brakes(7)
+        img, spd = "RST SPD NOT EXCEEDING 16 MPH", 18
+        sbdv_target = ["SUBDIV", 1001, 1015, 0, 2483, 16]
+
+    # Test Scenario 12 Track Level Axle Count Restricted Speed 18MPH
+    elif case == 12:
+        # Test Scenario 12 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 20})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.3, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_axles(55)
+        img, spd = "RST SPD NOT EXCEEDING 18 MPH", 20
+        sbdv_target = ["SUBDIV", 1001, 1015, 0, 2483, 18]
+
+    # Test Scenarios - TBC137 < Track Restricted Speed
+    # Test Scenario 13 Track Level Generic Restricted Speed 19MPH
+    elif case == 13:
+        # Test Scenario 13 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 10})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.3, "direction": "Increasing", "stealth": True})
+        img, spd = "MAX SPEED RST SPD", 12
+        sbdv_target = ["SUBDIV", 1001, 1015, 0, 2483, 10]
+
+    # Test Scenario 14 Track Level Tonnage Restricted Speed - Decreasing 17 MPH
+    elif case == 14:
+        # Test Scenario 14 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 13})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.8, "direction": "Decreasing", "stealth": True})
+        wcr_office_01030.set_trailing_tonnage(7500)
+        img, spd = "MAX SPEED RST SPD", 15
+        sbdv_target = ["SUBDIV", 1011, 1001, 20828, 0, 13]
+
+    # Test Scenario 15 Track Level TPOB Restricted Speed 16MPH
+    elif case == 15:
+        # Test Scenario 15 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 14})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.3, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_operative_brakes(7)
+        img, spd = "MAX SPEED RST SPD", 16
+        sbdv_target = ["SUBDIV", 1001, 1015, 0, 2483, 14]
+
+    # Test Scenario 16 Track Level Axle Count Restricted Speed 18MPH
+    elif case == 16:
+        # Test Scenario 16 Code
+        wcr_debug_client.set_tbc({"scac": 'UP', "parameter": "TBC137", "value": 15})
+        wcr_loco_sim.set_position(
+            {"sub_id": 8880, "track_group": "Main", "point": 5.3, "direction": "Increasing", "stealth": True})
+        wcr_office_01030.set_axles(55)
+        img, spd = "MAX SPEED RST SPD", 17
+        sbdv_target = ["SUBDIV", 1001, 1015, 0, 2483, 15]
+
+    wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+    wcr_debug_client.log_verification()
+    send_1051_msg(case)
+    # input Verification
+    # block level targets generates only when its present
+    if case < 9:
+        wcr_ptc.verify_target_details(
+            {"TGT_TYPE": blck_target[0] + " SPEED RESTRICTION", "TGT_START_LOC_BLOCKID": blck_target[1],
+             "TGT_END_LOC_BLOCKID": blck_target[2],
+             "TGT_START_LOC_OFFSET": blck_target[3], "TGT_END_LOC_OFFSET": blck_target[4],
+             "TGT_START_LOC_DISTID": 8880, "TGT_SPEED_LIMIT": blck_target[5],
+             "TGT_SPEED_APPLICABILITY": 0, "TGT_RESTRICTED_SPEED": 1, "expected_result": True,
+             "req_verified": 'L2R9479_block level target verification'})
+    input_verification(sbdv_target)
+    # Output Verification
+    output_verification(img)
+
+    # Clean up Activity
+    wcr_loco_sim.stop_train({"slew_seconds": 15, "pause_seconds": 7})
+    wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+
+# User Defined Functions
+def input_verification(sbdv_target):
+    wcr_ptc.verify_state({"OB_State": 'ACTIVE', "expected_result": True,
+                          "req_verified": 'L2R9479'})
+    # subdiv target generates both when subdiv target is present and for TBC137
+    wcr_ptc.verify_target_details(
+        {"TGT_TYPE": sbdv_target[0] + " SPEED RESTRICTION", "TGT_START_LOC_BLOCKID": sbdv_target[1],
+         "TGT_END_LOC_BLOCKID": sbdv_target[2],
+         "TGT_START_LOC_OFFSET": sbdv_target[3], "TGT_END_LOC_OFFSET": sbdv_target[4],
+         "TGT_START_LOC_DISTID": 8880, "TGT_SPEED_LIMIT": sbdv_target[5],
+         "TGT_SPEED_APPLICABILITY": 0, "TGT_RESTRICTED_SPEED": 1, "expected_result": True,
+         "req_verified": 'L2R9479_track level target verification'})
+    
+
+
+def output_verification(img):
+    wcr_display.compare_image({"image": img, "expected_result": "DISPLAYED",
+                               "req_verified": "L2R9479_most restrictive target label verification"})
+    if case == 9:
+        wcr_debug_client.log_verification({'keyword': "UP|8880|1001|0|UP|8880|1015|2483|SUBDIV SPEED RESTRIC|16|0|1",
+                                           'keyword_2': "UP|8880|1001|0|UP|8880|1015|2483|SUBDIV SPEED RESTRIC|16|0|1",
+                                       'expected_result': 'True', 'req_verified':"L2R9479_A: Verify Identical "
+                                            "duplicate targets are created"})
+
+
+def send_1051_msg(case):
+    wcr_office_01051.reset_msg()
+    wcr_office_01051.set_instance(0)
+    wcr_office_01051.set_reason('New Authority')
+    wcr_office_01051.set_type('Track warrant')
+    wcr_office_01051.set_num(100)
+    wcr_office_01051.set_sub_id(8880)
+    wcr_office_01051.segment_set_segment('Bidirectional')
+    if case not in [2, 6, 10, 14]:  # increasing
+        wcr_office_01051.segment_set_from_to({"start": 50000, "end": 650000, "sub_id": 8880, "track": 'Main'})
+    else:  # decreasing
+        wcr_office_01051.segment_set_from_to({"start": 650000, "end": 30000, "sub_id": 8880, "track": 'Main'})
+    wcr_office_01051.send_msg()
+
+
+if __name__ == "__main__":
+    main()

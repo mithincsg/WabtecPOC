@@ -1,0 +1,9 @@
+18 Signals 
+ L2R1145424 
+When the on-board segment generates one of the following targets 
+• a head-end only restricted speed becoming located signal target or 
+• a head-end only restricted speed unknown signal target or 
+• a head-end only restricted speed change in train orientation signal target and 
+that target starts at the beginning of the train’s calculated route where the country of operation is not Canada, 
+the on-board segment shall set the speed of that target to TBC137 mph using the value of the operating railroad 
+of the track at the near target limit. 

@@ -1,0 +1,12 @@
+15 Speed Enforcement 
+15.1 Speed Restriction Targets 
+15.1.1 Track Based Speed Restrictions 
+
+L2R9479 
+When the on-board segment generates a target for a track based subdivision / district level speed restriction or 
+block level speed restriction of restriction type "generic", "tonnage", "TPOB", or "axle count" and the track 
+database indicates that the speed is restricted speed, the on-board segment shall set the target speed to the 
+most restrictive of: 
+• the speed defined in the track database or 
+• the value of TBC137 defined in the railroad specific configuration fileset of the operating railroad of 
+the subdivision/district. 
