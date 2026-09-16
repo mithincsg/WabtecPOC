@@ -259,7 +259,10 @@ class TestScriptGenerator:
         )
 
         raw = self.llm_client.generate(
-            prompt.system, user_prompt, max_tokens=self.max_tokens
+            prompt.system,
+            user_prompt,
+            max_tokens=self.max_tokens,
+            prefill=_SCRIPT_PREFILL,
         )
         script = _extract_python(_strip_code_fence(raw))
         if script is None:
@@ -275,6 +278,7 @@ class TestScriptGenerator:
                 prompt.system,
                 user_prompt + _PYTHON_ONLY_REMINDER,
                 max_tokens=self.max_tokens,
+                prefill=_SCRIPT_PREFILL,
             )
             script = _extract_python(_strip_code_fence(raw))
         elif _unfilled_slots(script):
@@ -294,6 +298,7 @@ class TestScriptGenerator:
                         prompt.system,
                         user_prompt + _NO_PLACEHOLDER_REMINDER,
                         max_tokens=self.max_tokens,
+                        prefill=_SCRIPT_PREFILL,
                     )
                 )
             )
@@ -506,6 +511,17 @@ def _salvage_truncated(script: str) -> str:
     )
 
 
+# The script call is the one generation a JSON schema cannot constrain, so
+# the constraint is applied to the answer's opening instead: the model is
+# handed the house skeleton's first line as the start of its own turn and
+# continues from there. A reply that begins inside a comment line of a Python
+# file does not begin "We are given one test case..." — which is what a
+# chattier or reasoning-tuned model otherwise spends the whole output budget
+# doing, reaching the exporter as prose and leaving `_as_commented_out` to
+# salvage it. Only the encoding comment is prefilled: enough to fix the
+# answer's form, not enough to put a value in the model's mouth.
+_SCRIPT_PREFILL = "# This Python file uses the following encoding: utf-8\n"
+
 _NO_PLACEHOLDER_REMINDER = """
 
 Your previous answer copied the house skeleton's angle-bracket slots
@@ -625,15 +641,34 @@ def _as_commented_out(raw: str) -> str:
     )
 
 
+_FENCED_BLOCK = re.compile(r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```", re.DOTALL | re.M)
+
+
 def _strip_code_fence(raw: str) -> str:
-    """Removes a ```python fence if the model added one despite being told
-    not to — cheaper than rejecting an otherwise correct script.
+    """The script inside a markdown fence, if the model wrapped it in one.
+
+    Cheaper than rejecting an otherwise correct script. The fence is not
+    always the first thing in the reply — a chat-tuned model introduces it
+    ("Here is the script:") and explains it afterwards — so every fenced
+    block is considered, not only one at position 0. The largest block that
+    is a script wins, and a reply that already reads as a script untouched is
+    returned untouched, so a fence marker inside a comment cannot trigger
+    this.
     """
     text = raw.strip()
-    if not text.startswith("```"):
+    if "```" not in text or _is_script(text):
         return text
+    blocks = [m.group(1).strip() for m in _FENCED_BLOCK.finditer(text)]
+    scripts = [block for block in blocks if _is_script(block)]
+    if scripts:
+        return max(scripts, key=len)
+    if blocks:
+        # Nothing fenced parses — most likely the generation was cut off
+        # mid-block. Hand the longest one on anyway, for the truncation
+        # salvage to trim and mark.
+        return max(blocks, key=len)
+    # An opening fence with no closing one: the budget ran out inside it.
     lines = text.splitlines()
-    lines = lines[1:]
-    if lines and lines[-1].strip().startswith("```"):
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
+    if lines and lines[0].lstrip().startswith("```"):
+        return "\n".join(lines[1:]).strip()
+    return text

@@ -322,9 +322,37 @@ The script call is the one generation that cannot be constrained by a JSON
 schema (it must return Python), so "Output ONLY the Python source" in the
 prompt is a request, and a reasoning model whose chain of thought lands in
 `message.content` answers it with paragraphs of English ("We are given one
-test case… From the context…"). That is enforced in code instead, in
-`generator.py`:
+test case… From the context…").
 
+What replaces the schema is **prefill**: `LLMClient.generate` takes a
+`prefill=` argument, and the script call passes the house skeleton's first
+line (`_SCRIPT_PREFILL` in `generator.py`, the encoding comment and nothing
+more). `OllamaClient` sends it as a trailing **assistant** message, which
+every Ollama chat template in use renders without its end-of-turn token (the
+standard `{{ if not $last }}<|im_end|>` idiom), so the model continues that
+text instead of opening a fresh turn. Its first token is therefore already
+inside a Python comment line — it cannot begin a paragraph — and
+`_rejoin_prefill` stitches the prefill back onto the answer so callers see one
+continuous script whether the server continued the turn or ignored it and
+started over. Only the encoding comment is prefilled: enough to fix the
+answer's *form*, not enough to put a *value* in the model's mouth (see
+"Examples are templates, never a source of values").
+
+Prefill also sidesteps a trap specific to hybrid reasoning models. qwen3's
+Ollama template appends `<|im_start|>assistant\n<think>` after a trailing
+**user** message unconditionally, so the model always starts inside a chain of
+thought regardless of `llm_think: off`, and on a verbose model the whole
+`script_max_tokens` budget can be spent before any code is written — which
+reaches the exporter as prose. A trailing assistant message takes that branch
+of the template out of play. If a model still answers with prose, the budget
+is the next thing to check: raise `script_max_tokens`.
+
+The rest is enforced in code, in `generator.py`:
+
+- `_strip_code_fence` pulls the script out of a markdown fence wherever the
+  fence sits — a chat-tuned model introduces it ("Here is the script:") and
+  explains it afterwards, so a fence is not only found at position 0. A reply
+  that already reads as a script is returned untouched.
 - `_extract_python` decides whether the response *is* a script and, if the
   model narrated first and then wrote one, returns the code from the first
   house-skeleton anchor onward. Parsing alone is not the test — a prose line

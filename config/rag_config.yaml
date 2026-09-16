@@ -40,9 +40,9 @@ static_track_top_k: 4        # track-feature chunks per request (still
 
 # --- Generation (Ollama) -------------------------------------------------
 ollama_host: http://localhost:11434
-llm_model: qwen2.5:7b
+llm_model: qwen3:30b
 llm_temperature: 0.1
-llm_top_p: 0.9
+#llm_top_p: 0.9
 llm_max_tokens: 1280
 llm_num_ctx: 16384
 llm_request_timeout_seconds: 0
@@ -51,7 +51,12 @@ llm_keep_alive: 30m
 llm_num_threads: 0
 llm_think: off
 max_test_cases: 20
-script_max_tokens: 1792
+# The script is the longest answer the model writes, and the one that
+# cannot be schema-constrained. Too low and a verbose model spends the
+# budget before it reaches the end of the file, which arrives as a
+# truncated script (or, if it never got past its preamble, as no script
+# at all). Raise this before blaming the prompt.
+script_max_tokens: 4096
 
 
 

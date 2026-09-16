@@ -55,6 +55,48 @@ def strip_reasoning(text: str) -> str:
     return cleaned.strip()
 
 
+def _messages(system_prompt: str, user_prompt: str, prefill: str | None) -> list[dict]:
+    """The chat turns for one generation, optionally opening the answer.
+
+    A trailing assistant message is how a chat endpoint is told "the reply has
+    already started, continue it". Every Ollama chat template in use here
+    renders the last message without its end-of-turn token (the standard
+    `{{ if not $last }}<|im_end|>` idiom), so generation resumes inside that
+    text instead of at a fresh, empty assistant turn.
+
+    Two things follow, and both matter for the script call. The model cannot
+    open with a paragraph of English, because its first token continues a line
+    of Python. And on a hybrid reasoning model the template's unconditional
+    `<think>` opener is attached to a trailing *user* message only, so
+    prefilling skips it — the answer budget stops being spent on a chain of
+    thought that the caller throws away.
+    """
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    if prefill:
+        messages.append({"role": "assistant", "content": prefill})
+    return messages
+
+
+def _rejoin_prefill(prefill: str | None, content: str) -> str:
+    """The whole answer, prefill included, however the server handled it.
+
+    The caller asked for text that starts with `prefill`, so that is what it
+    gets back whether the server continued the prefilled turn (content is the
+    continuation) or ignored the trailing assistant message and started over
+    (content already repeats it). Getting this wrong either way is visible in
+    the export: a dropped prefill loses the script's first line, a doubled one
+    writes it twice.
+    """
+    if not prefill:
+        return content
+    if content.lstrip().startswith(prefill.strip()):
+        return content.lstrip()
+    return prefill + content
+
+
 class LLMConnectionError(RuntimeError):
     """The model endpoint could not be reached, or didn't answer in time."""
 
@@ -70,10 +112,19 @@ class LLMClient(Protocol):
         user_prompt: str,
         max_tokens: int | None = None,
         json_schema: dict | None = None,
+        prefill: str | None = None,
     ) -> str:
         """Runs one generation. `json_schema`, when given, constrains
         decoding to a JSON value of that shape — the datasheet call uses it,
         the script call (which must return Python) does not.
+
+        `prefill` is text the answer must continue from: it is sent as the
+        opening of the model's own turn, so the first token it chooses is
+        already inside that text rather than free to start a paragraph. It is
+        the script call's equivalent of the schema — the one constraint
+        available when the answer has to be Python, not JSON. An endpoint
+        that cannot prefill must still return the answer with `prefill`
+        prepended, so callers see one continuous text either way.
         """
         ...
 
@@ -130,6 +181,7 @@ class OllamaClient:
         user_prompt: str,
         max_tokens: int | None = None,
         json_schema: dict | None = None,
+        prefill: str | None = None,
     ) -> str:
         options = {
             "temperature": self.config.temperature,
@@ -142,10 +194,7 @@ class OllamaClient:
 
         payload = {
             "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": _messages(system_prompt, user_prompt, prefill),
             "stream": True,
             "keep_alive": self.config.keep_alive,
             "options": options,
@@ -204,7 +253,7 @@ class OllamaClient:
             elapsed,
             " (cut off at the total budget)" if stopped_early else "",
         )
-        return content
+        return _rejoin_prefill(prefill, content)
 
     def _stream_chat(self, payload: dict, started: float) -> tuple[str, int, bool]:
         """Reads a streamed /api/chat response.
