@@ -63,18 +63,6 @@ class GenerationConfig:
     script_max_tokens: int = 3072
 
 
-@dataclass
-class ConfidenceConfig:
-    weights: dict[str, float] = field(
-        default_factory=lambda: {
-            "retrieval": 0.3,
-            "grounding": 0.3,
-            "similarity_to_existing": 0.4,
-        }
-    )
-    review_threshold: float = 0.55
-
-
 # Maps a YAML key to the attribute it sets, so one flat config file can feed
 # three separate config objects without any of them knowing the file layout.
 _RETRIEVAL_KEYS = {
@@ -111,17 +99,10 @@ _GENERATION_KEYS = {
     "max_test_cases": "max_test_cases",
     "script_max_tokens": "script_max_tokens",
 }
-_CONFIDENCE_KEYS = {
-    "confidence_weights": "weights",
-    "confidence_review_threshold": "review_threshold",
-}
-
-
 @dataclass
 class RAGSettings:
     retrieval: RetrievalConfig
     generation: GenerationConfig
-    confidence: ConfidenceConfig
     base_dir: Path
 
     @classmethod
@@ -132,15 +113,12 @@ class RAGSettings:
 
         retrieval = RetrievalConfig()
         generation = GenerationConfig()
-        confidence = ConfidenceConfig()
 
         for key, value in raw.items():
             if key in _RETRIEVAL_KEYS:
                 setattr(retrieval, _RETRIEVAL_KEYS[key], value)
             elif key in _GENERATION_KEYS:
                 setattr(generation, _GENERATION_KEYS[key], value)
-            elif key in _CONFIDENCE_KEYS:
-                setattr(confidence, _CONFIDENCE_KEYS[key], value)
             else:
                 raise ValueError(f"Unknown config key: {key!r}")
 
@@ -151,6 +129,5 @@ class RAGSettings:
         return cls(
             retrieval=retrieval,
             generation=generation,
-            confidence=confidence,
             base_dir=base_dir,
         )

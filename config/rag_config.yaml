@@ -1,18 +1,12 @@
 # --- Retrieval + generation ---------------------------------------------
-# Ingestion-only settings live in config/config.yaml. This file controls
-# what happens once the knowledge base is already ingested.
 
-# Must match what config/config.yaml ingested into, and the model it used —
-# query vectors are only comparable to stored vectors from the same model.
 chroma_persist_dir: chroma_db
 chroma_collection: kb_collection
 embedding_model: BAAI/bge-m3
 embedding_device: auto   # auto | cpu | cuda
 
 # --- Hybrid search -------------------------------------------------------
-# Dense (BGE-M3 cosine) and keyword (BM25) run as two independent rankings
-# and are fused with reciprocal rank fusion. Weights are relative, not
-# required to sum to 1; set one to 0 to disable that arm.
+
 retrieval_top_k: 8           # chunks handed to the LLM after fusion
 candidates_per_arm: 30       # depth each arm searches before fusion
 dense_weight: 1.0
@@ -34,37 +28,20 @@ track_data_top_k: 4          # track-feature chunks added on top of top_k
 static_api_top_k: 4          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-feature chunks per request (still
                               # filtered to the requirement's subdivisions)
-static_parameter_top_k: 6    # TBC/CFG/THE parameter records per request
+static_parameter_top_k: 4    # TBC/CFG/THE parameter records per request
 
-# data/Examples/ is no longer sent at request time — its shape is distilled
-# into the house wording pattern and house skeleton in config/prompts.yaml,
-# so there is no examples budget to set here any more.
+
 
 # --- Generation (Ollama) -------------------------------------------------
 ollama_host: http://localhost:11434
 llm_model: qwen3:30b
 llm_temperature: 0.1
-#llm_top_p: 0.9
-llm_max_tokens: 1280
-llm_num_ctx: 16384
+llm_max_tokens: 14336
+llm_num_ctx: 24576
 llm_request_timeout_seconds: 0
 llm_stall_timeout_seconds: 0
 llm_keep_alive: 30m
-llm_num_threads: 0
+llm_num_threads: 8
 llm_think: off
 max_test_cases: 20
-# The script is the longest answer the model writes, and the one that
-# cannot be schema-constrained. Too low and a verbose model spends the
-# budget before it reaches the end of the file, which arrives as a
-# truncated script (or, if it never got past its preamble, as no script
-# at all). Raise this before blaming the prompt.
-script_max_tokens: 4096
-
-
-
-confidence_weights:
-  retrieval: 0.3
-  grounding: 0.3
-  similarity_to_existing: 0.4
-# Below this, the UI flags the test case for review.
-confidence_review_threshold: 0.55
+script_max_tokens: 20480

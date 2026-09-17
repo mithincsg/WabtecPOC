@@ -21,7 +21,7 @@ class RetrievedChunk:
     text: str
     metadata: dict[str, Any]
     # Cosine similarity from the dense arm, or None when only the keyword arm
-    # matched this chunk. Kept separate from `score` so confidence scoring can
+    # matched this chunk. Kept separate from `score` so a caller can
     # reason about semantic closeness specifically.
     similarity: float | None = None
     bm25_score: float | None = None

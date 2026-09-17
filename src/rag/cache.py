@@ -78,10 +78,9 @@ class EmbeddingCache:
 
     BGE-M3 on CPU costs a few hundred milliseconds per text, and this pipeline
     embeds the *same* text repeatedly: the requirement query is embedded once
-    per retrieval pass (general, track data, API docs, reference scripts), and
-    confidence scoring re-embeds the retrieved reference test cases on every
-    request even though they never change. Caching by exact text removes all
-    of that without changing a single vector.
+    per retrieval pass, and a repeated request re-embeds text that has not
+    changed. Caching by exact text removes all of that without changing a
+    single vector.
 
     Misses within one call are batched into a single `encode`, so a partially
     warm batch still pays for only one forward pass.

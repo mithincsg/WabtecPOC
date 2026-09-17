@@ -364,8 +364,7 @@ export default function App() {
               <div className="results-head">
                 <h2>{result.requirement_id || "Requirement"} — Datasheet</h2>
                 <span className="meta">
-                  {result.test_cases.length} cases · mean confidence{" "}
-                  {Math.round(result.mean_confidence * 100)}% ·{" "}
+                  {result.test_cases.length} cases ·{" "}
                   {result.cached
                     ? `reused an earlier identical run (${result.elapsed_seconds}s)`
                     : `${result.elapsed_seconds}s`}
@@ -391,8 +390,8 @@ export default function App() {
             <div className="empty">
               <h3>No test cases yet</h3>
               <p>
-                Paste a requirement on the left and generate. Retrieved context and
-                per-case confidence appear here alongside the datasheet.
+                Paste a requirement on the left and generate. The datasheet and the
+                retrieved context appear here.
               </p>
             </div>
           )}
@@ -440,7 +439,7 @@ export default function App() {
 
         <span className="hint spacer">
           {hasTestCases
-            ? "Rows flagged for review scored below the confidence threshold."
+            ? "Review the rows before downloading."
             : "Downloads unlock once test cases are generated."}
         </span>
       </footer>

@@ -15,7 +15,7 @@ requirement ──→ requirement understanding ──→ hybrid retrieval ─�
                             │
               context + prompts.yaml ──→ Qwen2.5-7B-Instruct (Ollama)
                             │
-              datasheet rows + confidence ──→ .xlsx
+              datasheet rows ──→ .xlsx
                             │
               approved rows ──→ second generation ──→ test script ──→ .txt
 ```
@@ -35,7 +35,7 @@ ollama serve
 values that differ per machine rather than per deployment behaviour: the
 backend host/port, allowed CORS origins, log level, the Ollama host, and the
 frontend dev-server port and proxy target. Everything else — chunking,
-retrieval weights, prompts, confidence thresholds — stays in `config/*.yaml`.
+retrieval weights, prompts — stays in `config/*.yaml`.
 
 The first ingestion run downloads `BAAI/bge-m3` from Hugging Face (~2 GB), so
 the machine needs internet access at least once.
@@ -140,7 +140,7 @@ Nothing unrelated ever shares a chunk.
 - **XLSX** — one row is one logical test case is one chunk
   (`xlsx_max_rows_per_chunk: 1`), so a retrieved reference test case is always
   whole. The `Requirement` and `S_no` columns become `requirement_id` and
-  `test_case_id` metadata, which is what confidence scoring matches on.
+  `test_case_id` metadata.
 - **PY/PYI** — module → class → method. A class with methods becomes a compact
   header chunk (signature and docstring) plus one chunk per method; a method
   is never split unless it alone busts the token budget.
@@ -168,40 +168,14 @@ comparable numbers. `dense_weight` and `keyword_weight` in
 The BM25 index is built in process from the collection and rebuilt whenever
 the chunk count changes, so it follows ingestion automatically.
 
-## Confidence scoring
-
-Every generated row gets three component scores and a weighted overall score.
-Components rather than one number, because they fail differently:
-
-| Component | What it measures | Low means |
-|---|---|---|
-| `retrieval` | Mean cosine of the strongest retrieved chunks | Nothing in the knowledge base really covers this requirement |
-| `grounding` | How much of the row's vocabulary — and especially its identifiers — traces back to the retrieved context | The model may have invented a parameter, block or API name |
-| `similarity_to_existing` | Cosine of the row against the closest **existing** test case for the same requirement | Either a genuinely new boundary case, or fabrication |
-
-`similarity_to_existing` is the strongest signal available, because a high
-score means the model reproduced something a human already wrote and signed
-off; the ID it matched (`L2R7983_1`) is reported so a reviewer can compare
-directly. It is not a verdict on its own — a real new boundary case scores low
-— which is why `grounding` sits beside it. When a requirement has no existing
-test cases, that axis is dropped and its weight redistributed rather than
-counted as zero.
-
-Rows below `confidence_review_threshold` are flagged in the UI and in the
-`Needs_Review` export column.
-
 ## Output formats
 
 The exported `.xlsx` is sheet `Datasheet` with columns A–J exactly as in your
 existing workbooks — `S_no`, `Requirement`, `Description`, `Folder`,
 `Optimization_Technique`, `Test_Type`, `Test_Technique`, `Retired?`,
 `Scorable`, `Comments` — so it drops into the existing execution flow
-unchanged. Confidence columns are **appended** after J, never inserted among
-them; pass `include_confidence: false` to omit them.
-
-On screen, Confidence sits second, right after `S_no`. With eleven columns the
-near-constant ones push it behind a horizontal scroll, and it is the signal
-reviewers triage on. Only the view is reordered; the export is not.
+unchanged, with no extra columns. The on-screen table shows the same columns
+in the same order.
 
 The script `.txt` follows the pattern of your existing scripts (encoding
 comment, proprietary docstring, `from Common.WCR_public import *`, `main()`
@@ -238,11 +212,10 @@ thread at startup, so the first real request doesn't pay for either.
 The generation itself is the floor on how fast a request can be. Everything
 around it is arranged so that it is the *only* thing you wait for:
 
-- **Nothing is embedded or scored twice.** The embedding model sits behind a
-  cache keyed on exact text. The requirement query was previously embedded
-  once per retrieval pass — general, track data, then again per doc type
-  during script generation — and confidence scoring re-embedded the retrieved
-  reference test cases on every request even though they never change.
+- **Nothing is embedded twice.** The embedding model sits behind a cache
+  keyed on exact text. The requirement query was previously embedded once per
+  retrieval pass — general, track data, then again per doc type during script
+  generation.
 - **BM25 scores are memoised per query.** `get_scores` walks the whole corpus
   in Python, and one request ran it several times over the same query with
   only the metadata filter differing. It now runs once and the filtered passes
@@ -276,7 +249,7 @@ edit.
 | File | Controls |
 |---|---|
 | `config/config.yaml` | Source folders, chunk sizes, PDF heuristics, embedding model, ChromaDB location |
-| `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling, confidence weights and threshold |
+| `config/rag_config.yaml` | Hybrid-search weights and depth, context budget, Ollama host/model/limits, the `max_test_cases` ceiling |
 | `config/prompts.yaml` | Every system and user prompt |
 | `.env` | Backend host/port, CORS origins, log level, Ollama host override, `MAX_CONCURRENT_GENERATIONS`, frontend dev-server port/proxy target |
 
@@ -302,7 +275,6 @@ src/rag/
   concurrency.py            the retrieval thread pool
   prompts.py                prompts.yaml loader
   schema.py                 datasheet rows, model-output parsing
-  confidence.py             the three scores
   llm_client.py             Ollama behind a protocol
   generator.py              test-case and test-script generators
   exporters.py              .xlsx and .txt

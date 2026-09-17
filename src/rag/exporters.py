@@ -33,32 +33,17 @@ _COMMENTS_FILL = PatternFill("solid", fgColor="FFC000")
 _SCENARIO_LINE_RE = re.compile(r"^\s*test\s*scenario\s*:", re.IGNORECASE)
 
 
-def datasheet_to_xlsx(
-    test_cases: list[TestCase], include_confidence: bool = True
-) -> bytes:
+def datasheet_to_xlsx(test_cases: list[TestCase]) -> bytes:
     """The datasheet, as an .xlsx byte string ready to stream to the browser.
 
     Columns A–J are exactly the delivered format, so the file can be dropped
-    into the existing test-execution flow unchanged. The confidence columns
-    are appended after them (K onwards) rather than inserted, so anything
-    reading the sheet by column position still works; drop them with
-    include_confidence=False if the consumer is strict about column count.
+    into the existing test-execution flow unchanged.
     """
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = SHEET_NAME
 
     labels = [label for _, label in DATASHEET_COLUMNS]
-    confidence_labels = [
-        "Confidence",
-        "Confidence_Retrieval",
-        "Confidence_Grounding",
-        "Similarity_To_Existing",
-        "Closest_Existing_Case",
-        "Needs_Review",
-    ]
-    if include_confidence:
-        labels += confidence_labels
 
     sheet.append(labels)
     for index, label in enumerate(labels, start=1):
@@ -69,18 +54,7 @@ def datasheet_to_xlsx(
             cell.fill = _COMMENTS_FILL
 
     for test_case in test_cases:
-        row = test_case.to_row()
-        if include_confidence:
-            confidence = test_case.confidence
-            row += [
-                confidence.overall,
-                confidence.retrieval,
-                confidence.grounding,
-                confidence.similarity_to_existing,
-                confidence.closest_existing_id or "",
-                "Yes" if confidence.needs_review else "No",
-            ]
-        sheet.append(row)
+        sheet.append(test_case.to_row())
 
     _apply_layout(sheet, len(labels))
     _bold_scenario_lines(sheet, len(test_cases))
@@ -93,8 +67,6 @@ def datasheet_to_xlsx(
 def _apply_layout(sheet, column_count: int) -> None:
     for index, (attr, _label) in enumerate(DATASHEET_COLUMNS, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = _COLUMN_WIDTHS.get(attr, 16)
-    for index in range(len(DATASHEET_COLUMNS) + 1, column_count + 1):
-        sheet.column_dimensions[get_column_letter(index)].width = 14
 
     description_column = next(
         i for i, (attr, _) in enumerate(DATASHEET_COLUMNS, start=1) if attr == "description"

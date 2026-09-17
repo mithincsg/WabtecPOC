@@ -204,16 +204,17 @@ class StaticContextProvider:
     def parameter_hits(self, query: str, top_k: int) -> list[KeywordHit]:
         """TBC/CFG/THE records from the parameter configuration guide.
 
-        Keyword-only, like the other static sources and for the same reason:
-        a requirement names the parameter it is about (TBC137, CFG16), and an
-        exact identifier is what BM25 is better at than dense search, which
-        blurs TBC137 into TBC139.
+        Exact lookup first, keyword search only as a fallback. A requirement
+        that names its parameters (TBC137, CFG16) has stated its own scope,
+        so those records are the whole answer and `top_k` does not apply to
+        them. Only a requirement that names none falls back to BM25, which
+        is still better than dense search at an exact identifier — it does
+        not blur TBC137 into TBC139.
 
         Returned as raw hits, not just the formatted block, so a caller can
-        also use them as the evidence for confidence scoring — test-case
-        generation no longer retrieves from the embedded knowledge base, so
-        these are the only chunks it has to score grounding and retrieval
-        strength against.
+        report them as the retrieved context — test-case generation does not
+        retrieve from the embedded knowledge base, so these are the only
+        chunks it has to show.
         """
         if top_k <= 0:
             return []
@@ -222,20 +223,33 @@ class StaticContextProvider:
             for identifier in _parameter_ids(query)
             if identifier in self._parameter_records
         ]
-        seen = {hit.chunk_id for hit in named}
-        ranked = [
-            hit
-            for hit in self._keyword_index.search(
-                query, top_k, predicate=lambda m: m.get("document_type") == "parameter_config"
+        if named:
+            # A requirement that names its parameters has already said which
+            # ones it is about, so nothing is padded in beside them. BM25
+            # ranks the rest on shared prose, and the guide is 900 records of
+            # the same prose: on a work-zone requirement naming TBC290 and
+            # CFG22, TBC412 ("...calculated position uncertainty of the
+            # leading edge of the train...") outscored TBC290's own record
+            # and reached the prompt, where every record reads as in-scope.
+            # A parameter the requirement never mentions is not a ranking
+            # question to be answered less confidently — it is the wrong
+            # answer, and one the reviewer cannot spot in a finished case.
+            logger.info(
+                "Static context (parameter_config): %d record(s) named in the requirement (%s); "
+                "no keyword padding",
+                len(named),
+                ", ".join(_parameter_ids(query)),
             )
-            if hit.chunk_id not in seen
-        ]
-        hits = named + ranked[: max(top_k - len(named), 0)]
+            return named
+
+        hits = self._keyword_index.search(
+            query, top_k, predicate=lambda m: m.get("document_type") == "parameter_config"
+        )
         logger.info(
-            "Static context (parameter_config): %d hit(s) (%d named in the requirement, %d by keyword)",
+            "Static context (parameter_config): %d/%d hit(s) by keyword "
+            "(the requirement names no TBC/CFG/THE identifier)",
             len(hits),
-            len(named),
-            len(hits) - len(named),
+            top_k,
         )
         return hits
 

@@ -12,7 +12,6 @@ from kb_ingestion.embeddings import LocalBGEM3Embedder
 from kb_ingestion.vector_store import VectorStore
 from rag.cache import EmbeddingCache, LruTtlCache
 from rag.caf_mapping import CafMapping
-from rag.confidence import ConfidenceScorer
 from rag.config import RAGSettings
 from rag.generator import TestCaseGenerator, TestScriptGenerator
 from rag.keyword_index import KeywordIndex
@@ -89,10 +88,9 @@ class Services:
             with self._lock:
                 if self._embedder is None:
                     retrieval = self.settings.retrieval
-                    # Wrapped in a cache because the same texts are embedded
-                    # over and over: the requirement query once per retrieval
-                    # pass, and the retrieved reference test cases on every
-                    # confidence-scoring run even though they never change.
+                    # Wrapped in a cache because the same requirement query
+                    # is embedded once per retrieval pass, so repeat requests
+                    # re-embed text that has not changed.
                     self._embedder = EmbeddingCache(
                         LocalBGEM3Embedder(
                             model_name=retrieval.embedding_model,
@@ -149,9 +147,6 @@ class Services:
                     self._test_case_generator = TestCaseGenerator(
                         llm_client=self.llm_client,
                         prompts=self.prompts,
-                        scorer=ConfidenceScorer(
-                            self.embedder, self.settings.confidence
-                        ),
                         static_context=self.static_context,
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
                         caf_mapping=self.caf_mapping,

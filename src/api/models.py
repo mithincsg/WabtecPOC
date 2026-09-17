@@ -2,21 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from rag.schema import ConfidenceBreakdown, TestCase
-
-
-class ConfidenceOut(BaseModel):
-    overall: float = 0.0
-    retrieval: float = 0.0
-    grounding: float = 0.0
-    similarity_to_existing: float = 0.0
-    closest_existing_id: str | None = None
-    closest_existing_source: str | None = None
-    needs_review: bool = False
-
-    @classmethod
-    def from_domain(cls, confidence: ConfidenceBreakdown) -> "ConfidenceOut":
-        return cls(**confidence.__dict__)
+from rag.schema import TestCase
 
 
 class TestCaseOut(BaseModel):
@@ -34,7 +20,6 @@ class TestCaseOut(BaseModel):
     retired: str = "False"
     scorable: str = "No"
     comments: str = ""
-    confidence: ConfidenceOut = Field(default_factory=ConfidenceOut)
 
     @classmethod
     def from_domain(cls, test_case: TestCase) -> "TestCaseOut":
@@ -53,7 +38,7 @@ class TestCaseOut(BaseModel):
                 "comments",
             )
         }
-        return cls(**data, confidence=ConfidenceOut.from_domain(test_case.confidence))
+        return cls(**data)
 
     def to_domain(self) -> TestCase:
         return TestCase(
@@ -67,7 +52,6 @@ class TestCaseOut(BaseModel):
             retired=self.retired,
             scorable=self.scorable,
             comments=self.comments,
-            confidence=ConfidenceBreakdown(**self.confidence.model_dump()),
         )
 
 
@@ -129,8 +113,6 @@ class GenerateTestCasesResponse(BaseModel):
     test_cases: list[TestCaseOut]
     retrieved: list[RetrievedChunkOut]
     track_subdivisions: list[str] = Field(default_factory=list)
-    mean_confidence: float = 0.0
-    review_threshold: float = 0.0
     elapsed_seconds: float = 0.0
     # True when these rows were replayed from an earlier identical request
     # rather than generated now, so the UI can say so instead of implying the
@@ -157,7 +139,6 @@ class GenerateScriptResponse(BaseModel):
 class ExportTestCasesRequest(BaseModel):
     test_cases: list[TestCaseOut] = Field(min_length=1)
     requirement_id: str | None = None
-    include_confidence: bool = True
 
 
 class ExportScriptRequest(BaseModel):

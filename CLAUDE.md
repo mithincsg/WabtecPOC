@@ -23,7 +23,7 @@ requirement ──→ requirement understanding ──→ hybrid retrieval ─�
                                                                   │
                 context + prompts.yaml ──→ Qwen2.5-7B (Ollama)
                                                                   │
-                datasheet rows + confidence ──→ .xlsx
+                datasheet rows ──→ .xlsx
                                                                   │
                 approved rows ──→ second generation ──→ test script ──→ .txt
 ```
@@ -55,7 +55,7 @@ ollama serve
 `.env` holds per-machine values: backend host/port, CORS origins, log level,
 `MAX_CONCURRENT_GENERATIONS`, retrieval worker count, Ollama host override,
 frontend dev-server port/proxy target. Everything else — chunking, retrieval
-weights, prompts, confidence thresholds — lives in `config/*.yaml`.
+weights, prompts — lives in `config/*.yaml`.
 
 First ingestion downloads `BAAI/bge-m3` from Hugging Face (~2 GB); needs
 internet access at least once.
@@ -147,8 +147,7 @@ Chunking preserves structure — nothing unrelated ever shares a chunk:
   dropped as boilerplate.
 - **XLSX** (`extractors/xlsx_extractor.py`): one row = one logical test case
   = one chunk (`xlsx_max_rows_per_chunk: 1`). `Requirement`/`S_no` columns
-  become `requirement_id`/`test_case_id` metadata (what confidence scoring
-  matches on).
+  become `requirement_id`/`test_case_id` metadata.
 - **PY/PYI** (`extractors/python_extractor.py`): module → class → method; a
   method is only split if it alone busts the token budget.
 - **HTML** (`extractors/html_extractor.py`): subdivision → named section
@@ -213,14 +212,9 @@ is the parameter configuration guide's records
 (`data/parameter_config/`, via `StaticContextProvider.parameter_hits`/
 `parameter_context`): the records already carry everything a datasheet row
 asserts against (identifier, valid range, units, defaults). Those same
-records also stand in for the retrieved-chunk evidence confidence scoring
-needs — `retrieval` falls back to each hit's BM25 score (no cosine
-similarity exists for a keyword-only source), and `similarity_to_existing`
-has no existing-test-case chunks to compare against any more, so it is
-always dropped and its weight redistributed to `retrieval`/`grounding` (the
-same redistribution the "no existing test cases for this requirement" case
-already used). The script call is unaffected — it still pulls both
-parameter records and knowledge-base context (see "Output formats").
+records are also what the response reports as its retrieved context. The
+script call is unaffected — it still pulls both parameter records and
+knowledge-base context (see "Output formats").
 
 Which subdivision the script call searches is decided by **one** thing: the
 subdivision picked in the UI (`subdivision` on the generate requests,
@@ -288,11 +282,22 @@ into prose, so asking about `TBC137` returns whatever share of a guide page
 the chunk boundary happened to catch, with its neighbours' ranges alongside
 it; one record per parameter returns that parameter.
 
-Retrieval of those records is not BM25 alone. Any TBC/CFG/THE identifier the
-requirement states is looked up by exact id in `static_context.py` and put at
-the head of the parameter block, then BM25 fills the remaining `static_parameter_top_k`
-slots. That lookup is the guarantee; the identifier boost below is what makes
-the ranking itself sound.
+Retrieval of those records is exact lookup first, BM25 only as a fallback.
+Any TBC/CFG/THE identifier the requirement states is looked up by exact id in
+`static_context.py`, and when the requirement names any, **those records are
+the whole parameter block** — nothing is padded in beside them and
+`static_parameter_top_k` does not apply. BM25 ranks the remaining ~900
+records on shared prose, and the guide is 900 records of the same prose: on
+a work-zone requirement naming TBC290 and CFG22, `TBC412` ("…calculated
+position uncertainty of the leading edge of the train…") scored *above*
+TBC290's own record and filled a padding slot, where `_format_hits` presents
+every record identically and the prompt calls the block the only place a
+value may come from. A parameter the requirement never mentions is not a
+ranking question to be answered less confidently — it is the wrong answer,
+and one the reviewer cannot spot once it is written into a finished case.
+`static_parameter_top_k` still governs the fallback, for a requirement that
+names no identifier at all; the identifier boost below is what makes that
+ranking sound.
 
 The PDF deliberately **stays** in `data/knowledge_base/` and stays embedded.
 The two are not redundant: the records answer "what is TBC137's valid range",
@@ -364,33 +369,12 @@ This pass runs only for the script call now. Test-case generation
 (`TestCaseGenerator`) is not constructed with a `HybridRetriever` at all —
 see "Static context" and "parameter_config" above for what replaces it.
 
-### Confidence scoring (`src/rag/confidence.py`)
-
-Three component scores + weighted overall (`confidence_weights` in
-`config/rag_config.yaml`), because they fail differently:
-
-| Component | Measures | Low means |
-|---|---|---|
-| `retrieval` | Mean cosine of strongest retrieved chunks (or, for a keyword-only source like parameter records, each hit's BM25 score relative to the strongest one) | Retrieved context doesn't really cover this requirement |
-| `grounding` | How much row vocabulary/identifiers trace to retrieved context | Model may have invented a param/block/API name |
-| `similarity_to_existing` | Cosine vs. closest existing test case for same requirement | Genuinely new boundary case, or fabrication |
-
-`similarity_to_existing` matches are reported by ID (e.g. `L2R7983_1`) for
-direct reviewer comparison. When a requirement has no existing test cases,
-that axis is dropped and its weight redistributed (not counted as zero) —
-for test-case generation this is now the normal case, since its only
-retrieved chunks are parameter records, which are never existing test
-cases. Rows below `confidence_review_threshold` are flagged in the UI and
-the `Needs_Review` export column.
-
 ### Output formats (`src/rag/exporters.py`)
 
 `.xlsx`: sheet `Datasheet`, columns A–J exactly matching existing workbooks
 (`S_no`, `Requirement`, `Description`, `Folder`, `Optimization_Technique`,
-`Test_Type`, `Test_Technique`, `Retired?`, `Scorable`, `Comments`). Confidence
-columns (`Confidence`, `Confidence_Retrieval`, `Confidence_Grounding`,
-`Similarity_To_Existing`, `Closest_Existing_Case`, `Needs_Review`) are
-**appended after J**, never inserted among them.
+`Test_Type`, `Test_Technique`, `Retired?`, `Scorable`, `Comments`) and
+nothing else — the export is exactly the delivered format.
 
 `.txt` script: `exporters.py` itself only prepends a provenance header
 (requirement ID, generation time) — the encoding comment, proprietary
@@ -563,9 +547,24 @@ passes `TEST_CASES_JSON_SCHEMA` (`schema.py`, built from the same tuples that
 normalise the columns) as `json_schema=` on `LLMClient.generate`, and
 `OllamaClient` sends it as Ollama's `format`: the decoder is constrained, so
 the response is a JSON object of the right shape whatever the model would
-otherwise have written. Only `description` is required in the schema — `s_no`
+otherwise have written. Only `description` is required of a case — `s_no`
 and `requirement` are assigned by `parse_test_cases` and everything else has a
-normalised default, so requiring them would only add ways to fail. The prompt
+normalised default, so requiring them would only add ways to fail.
+
+The schema's other job is the **count**. Nothing obliges a constrained
+decoder to write more than one array element — `]` is a legal token after
+the first — and the prompt's only number was a ceiling, so on one
+requirement the same model returned 8 cases, then 10, against a delivered
+datasheet of 11; a run returning 1 is the same coin. `prompts.yaml` asked
+the model to enumerate the behaviours before writing cases, but with only
+`test_cases` in the schema there was nowhere to put that list. So the schema
+now requires a `coverage` array of short strings *before* `test_cases`, and
+Ollama builds its grammar in property order: the enumeration is the first
+thing written, and the cases follow a list the model has already committed
+to. `coverage` never becomes a datasheet column — `parse_test_cases` only
+compares the two lengths and logs a warning naming the lines that got no
+case, because the reviewer's evidence of a short answer is the shortfall
+itself. The prompt
 still describes the shape (a constrained model writes better JSON when it also
 knows what the fields mean), the truncation salvage still applies, and an
 inference server too old for structured output is retried once without the
@@ -595,7 +594,7 @@ resort, not the first: that is the grounding the output depends on.
 | File | Controls |
 |---|---|
 | `config/config.yaml` | `sources` (embedded), `static_sources` (BM25-only), `examples_dir` (design-time only), chunk sizes, PDF heuristics, embedding model, ChromaDB location |
-| `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits/timeouts, `max_test_cases` ceiling, confidence weights/threshold |
+| `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits/timeouts, `max_test_cases` ceiling |
 | `config/prompts.yaml` | Every system and user prompt |
 | `data/parameter_config/*.json` | TBC/CFG/THE parameter records — generated from the guide PDF by `scripts/convert_parameter_guide.py` |
 | `config/caf_mapping.json` | Requirement → feature, i.e. the datasheet's `Folder` column — generated from `data/CAF.xlsx` by `scripts/convert_caf_mapping.py` |
@@ -652,7 +651,6 @@ src/rag/
   concurrency.py                 the retrieval thread pool
   prompts.py                     prompts.yaml loader
   schema.py                      datasheet rows, model-output parsing, truncation salvage
-  confidence.py                  the three scores
   llm_client.py                  Ollama behind a protocol
   generator.py                   test-case and test-script generators
   exporters.py                   .xlsx and .txt

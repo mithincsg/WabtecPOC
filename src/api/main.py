@@ -291,8 +291,6 @@ async def generate_test_cases(
         test_cases=[TestCaseOut.from_domain(tc) for tc in result.test_cases],
         retrieved=[_chunk_out(c) for c in result.retrieved_chunks],
         track_subdivisions=result.track_subdivisions,
-        mean_confidence=result.mean_confidence,
-        review_threshold=services.settings.confidence.review_threshold,
         elapsed_seconds=result.elapsed_seconds,
     )
     services.result_cache.put(key, response)
@@ -334,10 +332,7 @@ def export_test_cases(request: ExportTestCasesRequest) -> Response:
     than from server memory, so what gets exported is exactly what the user
     sees — including any edits they made in the table.
     """
-    content = datasheet_to_xlsx(
-        [tc.to_domain() for tc in request.test_cases],
-        include_confidence=request.include_confidence,
-    )
+    content = datasheet_to_xlsx([tc.to_domain() for tc in request.test_cases])
     filename = download_name("test_cases", request.requirement_id, "xlsx")
     return Response(
         content=content,

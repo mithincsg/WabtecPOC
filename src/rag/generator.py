@@ -6,7 +6,6 @@ import time
 from dataclasses import dataclass, field
 
 from .caf_mapping import CafMapping
-from .confidence import ConfidenceScorer
 from .llm_client import LLMClient
 from .prompts import PromptLibrary
 from .requirement_parser import parse_requirement
@@ -43,14 +42,6 @@ class TestCaseResult:
     track_subdivisions: list[str] = field(default_factory=list)
     elapsed_seconds: float = 0.0
 
-    @property
-    def mean_confidence(self) -> float:
-        if not self.test_cases:
-            return 0.0
-        return round(
-            sum(tc.confidence.overall for tc in self.test_cases) / len(self.test_cases), 3
-        )
-
 
 @dataclass
 class ScriptResult:
@@ -61,7 +52,7 @@ class ScriptResult:
 
 class TestCaseGenerator:
     """requirement -> understanding -> parameter-config context -> LLM ->
-    datasheet rows -> confidence scores.
+    datasheet rows.
 
     Deliberately takes no `HybridRetriever`: the embedded knowledge base is
     not retrieved for this call at all, only the parameter configuration
@@ -72,14 +63,12 @@ class TestCaseGenerator:
         self,
         llm_client: LLMClient,
         prompts: PromptLibrary,
-        scorer: ConfidenceScorer,
         static_context: StaticContextProvider | None = None,
         static_parameter_top_k: int = 6,
         caf_mapping: CafMapping | None = None,
     ):
         self.llm_client = llm_client
         self.prompts = prompts
-        self.scorer = scorer
         self.static_context = static_context
         self.static_parameter_top_k = static_parameter_top_k
         self.caf_mapping = caf_mapping
@@ -106,9 +95,7 @@ class TestCaseGenerator:
         (`data/parameter_config/`) only — the embedded knowledge base is not
         retrieved for this call at all. The parameter a requirement names is
         the thing its test cases assert against, and its valid range is what
-        a boundary case is written from, so the records are what a row needs;
-        the same records also stand in for the retrieved-chunk evidence
-        confidence scoring below is built on.
+        a boundary case is written from, so the records are what a row needs.
         """
         started = time.monotonic()
         parsed = parse_requirement(requirement_text)
@@ -172,13 +159,9 @@ class TestCaseGenerator:
             for test_case in test_cases:
                 test_case.folder = folder
 
-        self.scorer.score(test_cases, parameter_chunks, parsed.requirement_id)
         elapsed = round(time.monotonic() - started, 1)
         logger.info(
-            "Test-case generation finished in %.1fs: %d case(s), mean confidence %.2f",
-            elapsed,
-            len(test_cases),
-            (sum(tc.confidence.overall for tc in test_cases) / len(test_cases)) if test_cases else 0.0,
+            "Test-case generation finished in %.1fs: %d case(s)", elapsed, len(test_cases)
         )
 
         return TestCaseResult(
@@ -367,11 +350,10 @@ class TestScriptGenerator:
 
 
 def _chunk_from_hit(hit: KeywordHit) -> RetrievedChunk:
-    """A parameter-config keyword hit, in the shape confidence scoring and
-    the API's retrieved-context response already know how to read.
+    """A parameter-config keyword hit, in the shape the API's
+    retrieved-context response already knows how to read.
 
-    `similarity` stays None — these are BM25-only hits, never embedded — so
-    `ConfidenceScorer._retrieval_score` falls back to `bm25_score` for them.
+    `similarity` stays None — these are BM25-only hits, never embedded.
     """
     return RetrievedChunk(
         chunk_id=hit.chunk_id,

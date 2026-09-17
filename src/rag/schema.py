@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -46,26 +46,6 @@ class TestCaseParseError(ValueError):
 
 
 @dataclass
-class ConfidenceBreakdown:
-    """Why a test case scored what it did.
-
-    Kept as components rather than one number so a reviewer can tell a case
-    that's well grounded but unlike anything already written (probably a
-    genuine new scenario) from one that's neither (probably invented).
-    """
-
-    overall: float = 0.0
-    retrieval: float = 0.0
-    grounding: float = 0.0
-    similarity_to_existing: float = 0.0
-    # The closest existing test case for this requirement, so the reviewer
-    # can compare directly instead of going looking for it.
-    closest_existing_id: str | None = None
-    closest_existing_source: str | None = None
-    needs_review: bool = False
-
-
-@dataclass
 class TestCase:
     s_no: int
     requirement: str
@@ -80,7 +60,6 @@ class TestCase:
     # safe default is the one that needs an explicit opt-in.
     scorable: str = "No"
     comments: str = ""
-    confidence: ConfidenceBreakdown = field(default_factory=ConfidenceBreakdown)
 
     def to_row(self) -> list[str]:
         return [str(getattr(self, attr)) for attr, _ in DATASHEET_COLUMNS]
@@ -99,13 +78,32 @@ _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 # arrives here as "no JSON object" after minutes of CPU time. Constraining
 # the decoder is what makes the model swappable without re-tuning prompts.
 #
-# Only `description` is required: s_no and requirement are assigned by
-# parse_test_cases, and every other field has a normalised default, so
+# Only `description` is required of a case: s_no and requirement are assigned
+# by parse_test_cases, and every other field has a normalised default, so
 # demanding them would only give the model more ways to fail. The enums match
 # the tuples above, which is why they're built from them.
+#
+# `coverage` is a planning field, and it is why it comes first. Nothing
+# obliges a constrained decoder to write more than one array element — `]` is
+# a legal token after the first one — so on the same requirement the same
+# model returned 8 cases, then 10, and the datasheet it was measured against
+# has 11. prompts.yaml asks the model to enumerate the behaviours before
+# writing cases, but with only `test_cases` in the schema it had nowhere to
+# put that list, so the instruction could not be followed and the count was
+# free. Ollama builds its grammar in property order, so a required `coverage`
+# ahead of `test_cases` makes the enumeration the first thing written; the
+# cases then follow a list the model has already committed to. It is not
+# turned into datasheet rows — parse_test_cases only compares the two lengths
+# and warns — because the reviewer's evidence of a short answer is the
+# shortfall itself, not another column.
 TEST_CASES_JSON_SCHEMA: dict = {
     "type": "object",
     "properties": {
+        "coverage": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+        },
         "test_cases": {
             "type": "array",
             "items": {
@@ -122,9 +120,9 @@ TEST_CASES_JSON_SCHEMA: dict = {
                 },
                 "required": ["description"],
             },
-        }
+        },
     },
-    "required": ["test_cases"],
+    "required": ["coverage", "test_cases"],
 }
 
 
@@ -173,6 +171,22 @@ def parse_test_cases(
 
     if not test_cases:
         raise TestCaseParseError("The model returned no usable test cases.")
+
+    coverage = [
+        line.strip()
+        for line in (data.get("coverage") or [])
+        if isinstance(line, str) and line.strip()
+    ]
+    if len(test_cases) < len(coverage):
+        # The model listed what it meant to cover and then wrote fewer cases
+        # than that. Not an error — the rows it did write are sound — but the
+        # shortfall is invisible in the datasheet, so it is named here.
+        logger.warning(
+            "The model planned %d test case(s) but wrote %d. Missing: %s",
+            len(coverage),
+            len(test_cases),
+            "; ".join(coverage[len(test_cases):]),
+        )
     return test_cases
 
 

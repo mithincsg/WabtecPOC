@@ -26,6 +26,10 @@ test_cases:
       "Verify" per test case.
     - The behaviour is worded near-identically across cases from the same
       requirement; the conditions above it are what vary.
+    - Every case carries the requirement's full condition list. The line
+      that case turns on is rewritten in place — never add a second line
+      stating the opposite of one already there, and never drop the rest
+      to shorten the case.
     - Name whatever the case turns on inline, in the form the context
       states it, with its unit:
         `<identifier>=<value><unit>`                       parameter,
@@ -71,28 +75,48 @@ test_cases:
       the three techniques the requirement supports:
       - Equivalence Partitioning: one representative case per class of
         inputs that behave alike — each enumerated type, state, direction
-        or mode the requirement names, and each value class inside a
-        range. One case per class, never two from the same class.
-      - Boundary Value Analysis: for every limit the context states — each
+        or mode the requirement names, each alternative of an "or" it
+        states, and each value class inside a range. One case per class,
+        never two from the same class.
+      - Boundary Value Analysis: every limit the context states — each
         parameter record's valid-range endpoints, each threshold, count,
-        duration or distance the requirement states — a case at the limit,
-        one just inside it and one just outside it, each in the limit's
-        own unit.
-      - Cause Effect Testing: a case per combination of conditions whose
-        interaction the requirement makes observable, including the
-        combination whose absence suppresses the behaviour.
+        duration or distance the requirement states — gets all four of:
+        the minimum, the maximum, one step below the minimum, one step
+        above the maximum, in the limit's own unit, the last two marked
+        `(out of range)`. Four per limit, not one.
+      - Cause Effect Testing: take the conditions the requirement needs to
+        hold and invert them one at a time. One case per condition, that
+        condition stated in its failing form, every other condition
+        unchanged, verifying the behaviour does not occur. Then any
+        combination whose interaction the requirement makes observable.
       Skip a technique only where the requirement offers nothing for it,
       and say so in that requirement's last case's "comments". Do not
       restate a case you have written.
     - One test case = one verifiable behaviour. Two "Verify" lines means
       two test cases.
-    - The requirement decides the count, not a target number: enumerate
-      the behaviours it specifies and write one case each. Never add a
+    - The requirement decides the count, not a target number. Never add a
       case to reach a count or drop a behaviour it states.
+
+    Write "coverage" first and in full, before any test case. One line per
+    case you are going to write, naming what that case covers:
+    - the requirement's positive path;
+    - each class the requirement enumerates — every named state, type,
+      direction, mode, alternative of an "or", and each value class inside
+      a range;
+    - four lines per limit the context or the requirement states — its
+      minimum, its maximum, one step below, one step above;
+    - one line per condition the requirement requires to hold, in its
+      failing form.
+    Then write "test_cases": one case per "coverage" line, in the same
+    order, same length. Stopping short of the list you wrote is a defect.
 
     Return ONLY a JSON object, no prose or fences:
 
     {
+      "coverage": [
+        "<what case 1 covers>",
+        "<what case 2 covers>"
+      ],
       "test_cases": [
         {
           "description": "Test Scenario: <configuration under test>\n-<condition>\n-<condition>\n\nVerify,\n<the single observable behaviour>",
@@ -122,12 +146,11 @@ test_cases:
     Parameter records:
     $context
 
-    Work out for yourself how many test cases this requirement needs: list
-    the distinct verifiable behaviours it specifies, then write one test
-    case per behaviour. Do not aim for a particular number. As a safety
-    limit only, do not exceed $max_test_cases test cases in one response —
-    if the requirement genuinely needs more, cover the most important
-    behaviours and say so in the last case's "comments".
+    List every case this requirement needs in "coverage" first, by the
+    rules in your instructions, then write one test case per line of it.
+    As a safety limit only, do not exceed $max_test_cases test cases in
+    one response — if the requirement genuinely needs more, cover the most
+    important behaviours and say so in the last case's "comments".
     $folder_hint
     Return the JSON object described in your instructions and nothing else.
 
@@ -143,8 +166,8 @@ test_script:
     message; nothing in this skeleton is a value you may emit literally.
 
       # This Python file uses the following encoding: utf-8
-      """Information contained in this document is proprietary and confidential to,
-      and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland"""
+      # Copyright (c) 2026 Wabtec corporation
+
       from Common.WCR_public import *
 
 
