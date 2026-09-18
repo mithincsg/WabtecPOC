@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import warnings
 from pathlib import Path
 
 from . import ExtractedUnit
@@ -66,7 +67,13 @@ class PythonExtractor:
         source = file_path.read_text(encoding="utf-8", errors="replace")
 
         try:
-            tree = ast.parse(source, filename=str(file_path))
+            # The WCR stub file documents Windows paths inside docstrings
+            # ("Library_py\\Sim_Interface\\..."), which ast reports as invalid
+            # escape sequences — thousands of them, drowning the startup log.
+            # They are someone else's file and we only read names out of it.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(source, filename=str(file_path))
         except SyntaxError:
             return [
                 ExtractedUnit(

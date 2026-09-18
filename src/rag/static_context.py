@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from kb_ingestion.config import PipelineConfig
-from kb_ingestion.extractors.html_extractor import normalize_subdivision
-from kb_ingestion.pipeline import IngestionPipeline, discover_files
+from kb_ingestion.extractors.xml_extractor import normalize_subdivision
+from kb_ingestion.pipeline import ChunkingPipeline, discover_files
 
 from .keyword_index import KeywordHit, KeywordIndex
 
@@ -16,21 +16,21 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen=True)
 class Subdivision:
-    """One subdivision folder under data/track_data, as the UI lists it."""
+    """One subdivision folder under data/track_data, as the UI lists it.
+
+    Identified by its number and nothing else: the display names the old HTML
+    reports carried ("Ginger") are not in the XML export, and a picker that
+    shows a name for some subdivisions and a bare number for others reads as
+    a gap in the data rather than a choice.
+    """
 
     id: str
-    name: str
     chunks: int
-
-    @property
-    def label(self) -> str:
-        return f"{self.id} {self.name}".strip()
 
 
 class _StaticDocumentStore:
-    """Just enough of VectorStore's interface for KeywordIndex to build a
-    BM25 corpus over — backed by chunks read straight from disk rather than
-    a ChromaDB collection, since these sources are never embedded.
+    """The corpus KeywordIndex builds its BM25 index over: every chunk of
+    every configured source, read straight from disk at startup.
     """
 
     def __init__(self, chunk_ids: list[str], texts: list[str], metadatas: list[dict[str, Any]]):
@@ -46,13 +46,12 @@ class _StaticDocumentStore:
 
 
 def _build_static_chunks(config: PipelineConfig) -> _StaticDocumentStore:
-    static_config = dataclasses.replace(config, sources=config.static_sources)
-    pipeline = IngestionPipeline(static_config)
+    pipeline = ChunkingPipeline(config)
 
     chunk_ids: list[str] = []
     texts: list[str] = []
     metadatas: list[dict[str, Any]] = []
-    for file in discover_files(static_config):
+    for file in discover_files(config):
         try:
             _hash, chunks = pipeline.prepare_file(file)
         except Exception:
@@ -61,16 +60,15 @@ def _build_static_chunks(config: PipelineConfig) -> _StaticDocumentStore:
         for chunk in chunks:
             chunk_ids.append(chunk.metadata.chunk_id)
             texts.append(chunk.text)
-            metadatas.append(chunk.metadata.to_chroma_dict())
+            metadatas.append(chunk.metadata.to_dict())
 
-    logger.info("Built static (non-embedded) context over %d chunks", len(chunk_ids))
+    logger.info("Built static context over %d chunks", len(chunk_ids))
     return _StaticDocumentStore(chunk_ids, texts, metadatas)
 
 
 def _list_subdivisions(store: _StaticDocumentStore) -> list[Subdivision]:
     _ids, _texts, metadatas = store.get_all_documents()
     counts: dict[str, int] = {}
-    names: dict[str, str] = {}
     for metadata in metadatas:
         if metadata.get("document_type") != "track_data":
             continue
@@ -78,21 +76,15 @@ def _list_subdivisions(store: _StaticDocumentStore) -> list[Subdivision]:
         if not subdivision:
             continue
         counts[subdivision] = counts.get(subdivision, 0) + 1
-        # The HTML report carries the display name ("Ginger"); its XML sibling
-        # may not. Either file is enough to name the subdivision, so the first
-        # one that has it wins for the whole folder.
-        name = str(metadata.get("subdivision_name") or "").strip()
-        if name and not names.get(subdivision):
-            names[subdivision] = name
 
     found = [
-        Subdivision(id=subdivision, name=names.get(subdivision, ""), chunks=count)
+        Subdivision(id=subdivision, chunks=count)
         for subdivision, count in sorted(counts.items())
     ]
     logger.info(
         "Track data covers %d subdivision(s): %s",
         len(found),
-        ", ".join(s.label for s in found) or "none",
+        ", ".join(s.id for s in found) or "none",
     )
     return found
 
@@ -146,20 +138,18 @@ def _format_hits(hits: list[KeywordHit]) -> str:
 
 class StaticContextProvider:
     """python_apis, track_data and parameter_config, keyword-searched from an
-    in-process BM25 index built straight off disk (never embedded, never in
-    ChromaDB).
+    in-process BM25 index built straight off disk. This is the whole of the
+    app's retrieval — there is no dense arm and no vector store.
 
     parameter_config is the parameter configuration guide after
     `scripts/convert_parameter_guide.py` has turned its tables into one JSON
     record per parameter — near-identical rows keyed by exact identifiers,
     which is the same shape as track data and belongs here for the same
-    reasons. Its PDF stays in the knowledge base: the prose around the tables
-    is still worth embedding, and the records are what answer "what is
-    TBC137's valid range".
+    reasons.
 
-    track_data is one folder per subdivision, each holding the HTML report and
-    its `-subdiv.xml` sibling; both are indexed and both are stamped with the
-    folder's subdivision, so filtering to a subdivision covers the pair.
+    track_data is one folder per subdivision, each holding that subdivision's
+    `-subdiv.xml` export. Chunks are stamped with the folder's subdivision,
+    which is what the UI's picker filters on.
 
     `data/Examples/` is deliberately *not* loaded here. Sending those files
     at request time cost ~8-10k characters of prompt on every generation —
@@ -172,8 +162,7 @@ class StaticContextProvider:
     not runtime input.
 
     Built once, at construction — same lifetime as the running backend
-    process. Restart the server to pick up edits to data/python_apis or
-    data/track_data.
+    process. Restart the server to pick up edits to any source folder.
     """
 
     def __init__(
@@ -182,6 +171,7 @@ class StaticContextProvider:
     ):
         self._config = ingestion_config
         store = _build_static_chunks(ingestion_config)
+        self._chunk_count = store.count()
         self._keyword_index = KeywordIndex(store)
         self._subdivisions = _list_subdivisions(store)
         self._parameter_records = _index_parameter_records(store)
@@ -208,13 +198,11 @@ class StaticContextProvider:
         that names its parameters (TBC137, CFG16) has stated its own scope,
         so those records are the whole answer and `top_k` does not apply to
         them. Only a requirement that names none falls back to BM25, which
-        is still better than dense search at an exact identifier — it does
-        not blur TBC137 into TBC139.
+        still ranks an exact identifier well.
 
         Returned as raw hits, not just the formatted block, so a caller can
-        report them as the retrieved context — test-case generation does not
-        retrieve from the embedded knowledge base, so these are the only
-        chunks it has to show.
+        report them as the retrieved context — these are the only chunks
+        test-case generation has to show.
         """
         if top_k <= 0:
             return []
@@ -309,6 +297,11 @@ class StaticContextProvider:
             chosen,
         )
         return _format_hits(hits), (chosen,)
+
+    @property
+    def chunk_count(self) -> int:
+        """How much the index holds, for the health endpoint."""
+        return self._chunk_count
 
     @property
     def subdivisions(self) -> list[Subdivision]:

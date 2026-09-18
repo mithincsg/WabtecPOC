@@ -40,10 +40,10 @@ class ParsedRequirement:
 
 def parse_requirement(raw_text: str) -> ParsedRequirement:
     """The "requirement understanding" step ahead of retrieval: pulls out the
-    requirement ID (for citation, for the track-data mapping, and for the
-    datasheet's Requirement column) and the functional area, then normalizes
-    the body the same way ingested documents were normalized so the query is
-    embedded consistently with the knowledge base.
+    requirement ID (for citation and for the datasheet's Requirement column)
+    and the functional area, then normalizes the body the same way indexed
+    documents were normalized so the query is tokenized consistently with the
+    corpus.
     """
     cleaned = raw_text.strip()
 
@@ -55,7 +55,7 @@ def parse_requirement(raw_text: str) -> ParsedRequirement:
         own_line = _ID_OWN_LINE_RE.search(cleaned)
         requirement_id = own_line.group(1) if own_line else None
         # Leading heading text stays in the query — it's domain context for
-        # the embedding, not noise.
+        # the search, not noise.
         body = cleaned
 
     return ParsedRequirement(

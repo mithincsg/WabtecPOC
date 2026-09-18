@@ -59,12 +59,7 @@ class RetrievedChunkOut(BaseModel):
     chunk_id: str
     source: str
     document_type: str = ""
-    similarity: float | None = None
     bm25_score: float | None = None
-    # Which arm(s) of the hybrid search found this chunk — shown in the UI so
-    # it's visible when keyword search is what surfaced a parameter table that
-    # semantic search alone ranked too low.
-    matched_by: list[str] = Field(default_factory=list)
     excerpt: str = ""
 
 
@@ -153,11 +148,11 @@ class RequirementUploadResponse(BaseModel):
 
 
 class SubdivisionOut(BaseModel):
-    """One entry in the UI's subdivision picker."""
+    """One entry in the UI's subdivision picker, identified by its number —
+    the XML export carries no display name.
+    """
 
     id: str
-    name: str = ""
-    label: str = ""
     chunks: int = 0
 
 
@@ -166,8 +161,7 @@ class SubdivisionsResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    knowledge_base_chunks: int
-    embedding_model: str
+    indexed_chunks: int
     llm_model: str
     llm_available: bool
     caf_mapped_requirements: int = 0

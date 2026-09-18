@@ -73,59 +73,6 @@ class LruTtlCache:
             return len(self._entries)
 
 
-class EmbeddingCache:
-    """An EmbeddingModel that remembers vectors it has already computed.
-
-    BGE-M3 on CPU costs a few hundred milliseconds per text, and this pipeline
-    embeds the *same* text repeatedly: the requirement query is embedded once
-    per retrieval pass, and a repeated request re-embeds text that has not
-    changed. Caching by exact text removes all of that without changing a
-    single vector.
-
-    Misses within one call are batched into a single `encode`, so a partially
-    warm batch still pays for only one forward pass.
-    """
-
-    def __init__(self, embedder, max_entries: int = 4096):
-        self._embedder = embedder
-        self._cache = LruTtlCache(max_entries=max_entries)
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
-
-        vectors: list[list[float] | None] = [None] * len(texts)
-        # Deduplicate within the batch as well as against the cache: the same
-        # description can legitimately appear twice in one scoring call.
-        pending: dict[str, list[int]] = {}
-        for index, text in enumerate(texts):
-            cached = self._cache.get(text)
-            if cached is not None:
-                vectors[index] = cached
-            else:
-                pending.setdefault(text, []).append(index)
-
-        if pending:
-            unique = list(pending)
-            computed = self._embedder.embed(unique)
-            for text, vector in zip(unique, computed):
-                self._cache.put(text, vector)
-                for index in pending[text]:
-                    vectors[index] = vector
-
-        # Every slot is filled by construction; the cast keeps the type honest.
-        return [v for v in vectors if v is not None]
-
-    @property
-    def wrapped(self):
-        return self._embedder
-
-    def __getattr__(self, name):
-        # Keeps `model`, `model_name` and friends reachable, so the wrapper is
-        # a drop-in for the embedder it holds.
-        return getattr(self._embedder, name)
-
-
 def stable_key(*parts: Any) -> str:
     """A short, stable cache key for arbitrary JSON-able request parts.
 

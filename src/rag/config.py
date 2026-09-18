@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -8,23 +8,9 @@ import yaml
 
 @dataclass
 class RetrievalConfig:
-    chroma_persist_dir: Path = Path("chroma_db")
-    chroma_collection: str = "kb_collection"
-
-    embedding_model: str = "BAAI/bge-m3"
-    embedding_device: str = "auto"
-
-    top_k: int = 10
-    candidates_per_arm: int = 30
-    dense_weight: float = 1.0
-    keyword_weight: float = 0.6
-    rrf_k: int = 60
-    min_similarity: float = 0.0
-    max_context_chars: int = 9000
-
-    doc_types: list[str] = field(default_factory=list)
-    track_data_doc_type: str = "track_data"
-    track_data_top_k: int = 4
+    """How many chunks each BM25 pass over the static index returns. There is
+    no dense arm: every source the app reads is keyword-searched.
+    """
 
     static_api_top_k: int = 4
     static_track_top_k: int = 4
@@ -66,20 +52,6 @@ class GenerationConfig:
 # Maps a YAML key to the attribute it sets, so one flat config file can feed
 # three separate config objects without any of them knowing the file layout.
 _RETRIEVAL_KEYS = {
-    "chroma_persist_dir": "chroma_persist_dir",
-    "chroma_collection": "chroma_collection",
-    "embedding_model": "embedding_model",
-    "embedding_device": "embedding_device",
-    "retrieval_top_k": "top_k",
-    "candidates_per_arm": "candidates_per_arm",
-    "dense_weight": "dense_weight",
-    "keyword_weight": "keyword_weight",
-    "rrf_k": "rrf_k",
-    "min_similarity": "min_similarity",
-    "max_context_chars": "max_context_chars",
-    "doc_types": "doc_types",
-    "track_data_doc_type": "track_data_doc_type",
-    "track_data_top_k": "track_data_top_k",
     "static_api_top_k": "static_api_top_k",
     "static_track_top_k": "static_track_top_k",
     "static_parameter_top_k": "static_parameter_top_k",
@@ -122,10 +94,6 @@ class RAGSettings:
             else:
                 raise ValueError(f"Unknown config key: {key!r}")
 
-        path = Path(retrieval.chroma_persist_dir)
-        retrieval.chroma_persist_dir = (
-            path if path.is_absolute() else (base_dir / path).resolve()
-        )
         return cls(
             retrieval=retrieval,
             generation=generation,

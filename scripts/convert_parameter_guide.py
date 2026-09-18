@@ -9,8 +9,9 @@ BM25 index can return exactly the one asked for.
     python scripts/convert_parameter_guide.py
 
 Re-run after dropping a new revision of the guide into data/knowledge_base/.
-The backend reads the JSON, not the PDF, so a new revision has no effect until
-this runs (and the server restarts, as with every static source).
+The backend reads the JSON, not the PDF — data/knowledge_base/ holds the
+source PDFs and is not read at request time — so a new revision has no effect
+until this runs and the server restarts.
 """
 
 from __future__ import annotations

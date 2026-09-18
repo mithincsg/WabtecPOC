@@ -1,16 +1,11 @@
 # --- Parsing -------------------------------------------------------------
-PyMuPDF>=1.24        # PDF: text with font attributes, table detection
-openpyxl>=3.1        # XLSX/XLSM read (ingestion) and write (datasheet export)
-# .py/.pyi use the stdlib `ast`; .html uses the stdlib `html.parser`.
-
-# --- Embeddings ----------------------------------------------------------
-sentence-transformers>=3.0   # runs BAAI/bge-m3 in process
-transformers>=4.44           # bge-m3 tokenizer, used for chunk token budgets
+PyMuPDF>=1.24        # PDF: the parameter guide converter
+openpyxl>=3.1        # XLSX/XLSM read (CAF workbook) and write (datasheet export)
+# .py/.pyi use the stdlib `ast`; track XML uses the stdlib ElementTree.
 
 # --- Retrieval -----------------------------------------------------------
-chromadb>=0.5        # dense vector store
-rank-bm25>=0.2.2     # keyword arm of hybrid search
-numpy>=1.26          # BM25 ranking and confidence cosines (also a chromadb dep)
+rank-bm25>=0.2.2     # the app's only retrieval arm
+numpy>=1.26          # BM25 ranking
 
 # --- Backend -------------------------------------------------------------
 fastapi>=0.111

@@ -9,13 +9,9 @@ venv/
 # Local machine settings; see .env.example for the template
 .env
 
-# Proprietary source documents (I-ETMS specs, WCR API stubs, track reports,
+# Proprietary source documents (I-ETMS specs, WCR API stubs, track exports,
 # reference examples) — never committed. Each machine points config.yaml at
 # its own copy; see README for how to obtain them.
-
-
-# Rebuildable from data/ by scripts/run_ingestion.py
-chroma_db/
 
 # Frontend
 node_modules/

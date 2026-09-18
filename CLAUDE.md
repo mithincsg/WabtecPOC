@@ -4,47 +4,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Turns a requirement into a review-ready test-case datasheet (`.xlsx`) and an automation script draft (`.txt`), grounded in existing documents via RAG:
+Turns a requirement into a review-ready test-case datasheet (`.xlsx`) and an
+automation script draft (`.txt`), grounded in existing documents:
 
 ```
-data/knowledge_base/  PDF · XLSX · TXT   ──(PyMuPDF, openpyxl)──┐
-                                                                  │
-                            chunking (structure-aware) → BGE-M3 → ChromaDB
-                                                                  │
-data/python_apis/  .py/.pyi   ──(ast)──┐                         │
-data/track_data/<subdiv>/  .html + .xml  ──(html.parser, ElementTree)──┤
+data/python_apis/       .py/.pyi   ──(ast)──┐
+data/track_data/<subdiv>/  -subdiv.xml  ──(ElementTree)──┤
 data/parameter_config/  .json   ──(one record per TBC/CFG/THE)──┤
-                                                   BM25-only, never embedded
-data/Examples/     req → ref test cases → ref script triples      (design-time only:
+                                                                │
+                            chunking (structure-aware) → one in-process
+                                                          BM25 index
+                                                                │
+data/Examples/     req → ref test cases → ref script triples    (design-time only:
                    distilled by hand into the templates in prompts.yaml, never sent)
-                                                                  │
-requirement ──→ requirement understanding ──→ hybrid retrieval ──┤
-                                            (BGE-M3 dense + BM25, RRF)
-                                                                  │
-                context + prompts.yaml ──→ Qwen2.5-7B (Ollama)
-                                                                  │
+                                                                │
+requirement ──→ requirement understanding ──→ BM25 retrieval ──┤
+                                                                │
+                context + prompts.yaml ──→ Qwen (Ollama)
+                                                                │
                 datasheet rows ──→ .xlsx
-                                                                  │
+                                                                │
                 approved rows ──→ second generation ──→ test script ──→ .txt
 ```
 
-Only `data/knowledge_base/` is embedded into ChromaDB. `data/python_apis/`,
-`data/track_data/` and `data/parameter_config/` are parsed with the same
-extractors but kept in an in-process, BM25-only index
-(`src/rag/static_context.py`) instead — they're either one giant stub file or
-thousands of near-identical rows (per subdivision, per parameter), not prose
-an embedding model gains from, and all three are full of exact identifiers
-(API names, block numbers, `TBC137`) BM25 already handles better than dense
-search. `data/Examples/` is separate again, and is not sent to the
-model at all: its patterns are distilled by hand into the house wording
-pattern and house skeleton in `config/prompts.yaml`, so the shape costs a
-few hundred tokens of cacheable system prompt instead of ~10k characters of
-prefill on every request.
+**There is no vector store and no embedding model.** Every source folder is
+parsed from disk at server start into a single in-process BM25 index
+(`src/rag/static_context.py`). This is deliberate: all three sources are
+either one giant stub file or thousands of near-identical rows (per
+subdivision, per parameter), not prose an embedding model gains from, and
+all three are full of exact identifiers (API names, block numbers,
+`TBC137`) BM25 already handles better than dense search.
+
+`data/knowledge_base/` is **not read at request time**. It holds the source
+PDFs that `scripts/convert_parameter_guide.py` converts into
+`data/parameter_config/`, and nothing else.
+
+`data/Examples/` is separate again, and is not sent to the model at all: its
+patterns are distilled by hand into the house wording pattern and house
+skeleton in `config/prompts.yaml`, so the shape costs a few hundred tokens of
+cacheable system prompt instead of ~10k characters of prefill on every
+request.
 
 ## Setup
 
 ```bash
-python -m venv venv && venv\Scripts\activate      # Windows
+python -m venv venv && venv\Scriptsctivate      # Windows
 pip install -r requirements.txt
 # create .env yourself (gitignored, no committed template) — see the
 # "--- ... ---" section comments in .env for what each key does
@@ -53,31 +57,28 @@ ollama serve
 ```
 
 `.env` holds per-machine values: backend host/port, CORS origins, log level,
-`MAX_CONCURRENT_GENERATIONS`, retrieval worker count, Ollama host override,
-frontend dev-server port/proxy target. Everything else — chunking, retrieval
-weights, prompts — lives in `config/*.yaml`.
+`MAX_CONCURRENT_GENERATIONS`, Ollama host override, frontend dev-server
+port/proxy target. Everything else — chunking, retrieval depth, prompts —
+lives in `config/*.yaml`.
 
-First ingestion downloads `BAAI/bge-m3` from Hugging Face (~2 GB); needs
-internet access at least once.
+**The backend makes no network calls at startup** beyond talking to Ollama.
+Nothing is downloaded: no model, no tokenizer. Keep it that way — a
+dependency that reaches the network at import or startup does not belong
+here. `TokenCounter` in `chunking.py` estimates token counts locally with a
+regex piece count scaled by a factor measured against the real bge-m3
+tokenizer (1.03x–1.20x across the three sources, so one factor covers the
+corpus within ~15%). Since nothing is embedded, `chunk_max_tokens` only
+bounds how much text a chunk carries into a prompt, and an estimate is as
+useful there as an exact count. A plain word count is *not* an acceptable
+substitute: on the track XML it undercounts by more than 3x and would
+silently triple every chunk.
 
 ## Common commands
 
-Build/update the knowledge base:
-
-```bash
-python scripts/run_ingestion.py --dry-run   # parse only: no model, no writes
-python scripts/run_ingestion.py             # embed and write to ChromaDB
-python scripts/run_ingestion.py --prune     # forget files you deleted
-python scripts/run_ingestion.py --reset     # start over
-```
-
-Re-running skips files whose bytes **and** processing code (`pipeline_fingerprint`)
-are both unchanged since last embedded (stamped on the chunks themselves in
-ChromaDB — no separate state file). Changing an extractor bumps the
-fingerprint and re-embeds the whole KB once. Only `sources:` in
-`config/config.yaml` is affected — `static_sources:` (python_apis,
-track_data, parameter_config) is read fresh from disk on every server start,
-not ingested.
+There is no ingestion step. Every source folder under `static_sources:` in
+`config/config.yaml` is read fresh from disk on every server start, so
+**editing any of them takes effect on the next restart** — no build, no
+index to rebuild, no state file.
 
 Convert the Parameter Configuration Guide after dropping a new revision of it
 into `data/knowledge_base/`:
@@ -87,8 +88,7 @@ python scripts/convert_parameter_guide.py   # the guide PDF -> data/parameter_co
 ```
 
 The running app reads the JSON, not the PDF, so a new revision changes nothing
-until this is re-run and the server restarted (static sources are read at
-startup).
+until this is re-run and the server restarted.
 
 Update the requirement -> feature (Folder) mapping after editing `data/CAF.xlsx`:
 
@@ -125,102 +125,83 @@ npm run preview   # preview the build
 ```
 
 There is no automated test suite in this repo currently (no `tests/`
-directory, no pytest config) — verify changes by running ingestion and the
-API/frontend directly.
+directory, no pytest config) — verify changes by starting the server and
+exercising the API/frontend directly.
 
 ## Architecture
 
-### Ingestion (`src/kb_ingestion/`)
+### Parsing and chunking (`src/kb_ingestion/`)
 
-`config/config.yaml`'s `sources:` list currently has only `data/knowledge_base`
-active (`python_apis`/`track_data`/`parameter_config` are under
-`static_sources:` instead — they're ingested differently, see below). Every chunk is stamped with a `document_type` from
-its root; `subfolders_as_type: true` lets an immediate subfolder override it
-(e.g. `knowledge_base/reference_test_cases/` becomes its own filterable type,
-no code change).
+Despite the package name, nothing is ingested anywhere — this is the parse
+and chunk stage, and its output goes straight into the in-process BM25 index.
+`config/config.yaml`'s `static_sources:` lists every folder read. Every chunk
+is stamped with a `document_type` from its root; `subfolders_as_type: true`
+lets an immediate subfolder override it, no code change.
 
 Chunking preserves structure — nothing unrelated ever shares a chunk:
-- **PDF** (`extractors/pdf_extractor.py`): heading hierarchy built while
-  reading (numbering like `3.1.1`, font-size/bold fallback). A chunk never
-  spans two sections; every prose chunk carries `section_path`. Tables become
-  their own chunks. Running headers/footers and per-page admin tables are
-  dropped as boilerplate.
-- **XLSX** (`extractors/xlsx_extractor.py`): one row = one logical test case
-  = one chunk (`xlsx_max_rows_per_chunk: 1`). `Requirement`/`S_no` columns
-  become `requirement_id`/`test_case_id` metadata.
-- **PY/PYI** (`extractors/python_extractor.py`): module → class → method; a
+- **PY/PYI** (`extractors/python_extractor.py`): module -> class -> method; a
   method is only split if it alone busts the token budget.
-- **HTML** (`extractors/html_extractor.py`): subdivision → named section
-  (Blocks, Switches, Signals, Speed Restrictions) → track-feature records,
-  tagged with the numeric subdivision ID (read from the containing folder
-  first, then the document).
-- **XML** (`extractors/xml_extractor.py`): the `-subdiv.xml` sibling.
-  Subdivision → record type → one `field=value` line per record, nested
-  records prefixed with their parent's ID (`BlockFeature 2001 > …`) so a
-  flattened line still says which block it belongs to. Each unit starts with
-  a label row naming the record type and its fields in **split** form
-  (`Block Signal Feature | Signal Id | …`), because BM25 tokenizes camel case
-  whole — without it a requirement asking about a "signal" matches none of
-  these rows. Chunking repeats that first line on every split chunk. The
-  exports pad fixed-width fields with literal `&#x0;`, which is not
-  well-formed XML at any version, so illegal character references are
+- **XML** (`extractors/xml_extractor.py`): the `<subdiv>-subdiv.xml` track
+  export. Subdivision -> record type -> one `field=value` line per record,
+  nested records prefixed with their parent's ID (`BlockFeature 2001 > ...`)
+  so a flattened line still says which block it belongs to. Each unit starts
+  with a label row naming the record type and its fields in **split** form
+  (`Block Signal Feature | Signal Id | ...`), because BM25 tokenizes camel
+  case whole — without it a requirement asking about a "signal" matches none
+  of these rows. Chunking repeats that first line on every split chunk. The
+  exports pad fixed-width fields with literal NUL character references, which
+  is not well-formed XML at any version, so illegal character references are
   stripped before parsing rather than losing a 2 MB file to one padded field.
-- **TXT** (`extractors/text_extractor.py`): plain-text documents in
-  `knowledge_base/`.
 - **JSON** (`extractors/json_extractor.py`): the converted Parameter
   Configuration Guide. One parameter record = one chunk, led by its
   identifier and title (`TBC137 | Restricted Speed`) so BM25 can return the
   parameter a requirement names rather than its neighbours.
 
-Key files: `chunking.py` (normalisation, token budgets, metadata),
-`incremental.py` (fingerprint behind the unchanged-file skip),
-`embeddings.py` (BGE-M3 wrapper), `vector_store.py` (ChromaDB wrapper),
-`pipeline.py` (orchestration).
+`extractors/` also still holds PDF, XLSX and TXT parsers. No configured
+source uses them today; they are kept because they are generic format
+parsers, and adding a folder of PDFs to `static_sources:` should not need
+new code.
 
-### Static context: python_apis, track_data and parameter_config (`src/rag/static_context.py`)
+Key files: `chunking.py` (normalisation, token budgets, metadata),
+`pipeline.py` (`ChunkingPipeline`: discover -> extract -> normalise -> chunk,
+in memory, nothing persisted).
+
+### The static index: python_apis, track_data and parameter_config (`src/rag/static_context.py`)
 
 `python_apis/`, `track_data/` and `parameter_config/` are declared under
-`static_sources:` in `config/config.yaml`, parsed with the same extractors as
-above, but held in an in-process BM25-only index instead of ChromaDB — see
-the file's header comment for the reasoning.
+`static_sources:` in `config/config.yaml` and held in one in-process BM25
+index. This is the whole of the app's retrieval.
 `static_api_top_k`/`static_track_top_k`/`static_parameter_top_k` in
 `config/rag_config.yaml` control how many chunks of each are pulled per
 request.
 
 `track_data/` is one folder per subdivision (`data/track_data/08101/`), each
-holding **both** halves of that subdivision's export, and both are indexed:
+holding that subdivision's `<subdiv>-subdiv.xml` export: the full serialized
+track database, carrying WIU addresses and security keys, per-block
+element/heading/elevation series, device status indices and acquisitions.
 
-- `<subdiv>.<rev>.html` — the readable report: a handful of grouped, labelled
-  tables (Blocks, Switches, Signals, Speed Restrictions).
-- `<subdiv>-subdiv.xml` — the full serialized track database, carrying fields
-  the report never prints (WIU addresses and security keys, per-block
-  element/heading/elevation series, device status indices, acquisitions).
+The HTML report that used to sit beside each XML has been removed, along with
+`html_extractor.py`. It was the human view of a strict subset of the same
+data, and indexing both meant two chunks competing to answer the same
+question. **Only XML is read now** — `.html`/`.htm` are no longer registered
+suffixes, so dropping a report back into a folder does nothing.
 
-The folder name is what stamps a chunk's `subdivision`, so one filter covers
-the pair regardless of what either file states internally. Together they are
-~5,000 BM25 chunks and about 11s of the backend's startup; the XML is roughly
-four fifths of that.
+One consequence is visible in the UI: the display name ("Ginger") lived only
+in the HTML report, so the subdivision picker lists bare numbers. That is the
+intended state, not a gap — a picker showing a name for some subdivisions and
+a number for others would read as missing data. `Subdivision` in
+`static_context.py` therefore carries `id` and `chunks` and nothing else.
 
 Track data reaches **only** the script call. A datasheet description states
 the behaviour to verify, not the blocks it runs on, so test-case generation
 sends nothing from `track_data/` (its `track_subdivisions` in the response
 is always empty).
 
-Test-case generation does not retrieve from the embedded knowledge base at
-all — `TestCaseGenerator` is not given a `HybridRetriever`. Its only context
-is the parameter configuration guide's records
-(`data/parameter_config/`, via `StaticContextProvider.parameter_hits`/
-`parameter_context`): the records already carry everything a datasheet row
-asserts against (identifier, valid range, units, defaults). Those same
-records are also what the response reports as its retrieved context. The
-script call is unaffected — it still pulls both parameter records and
-knowledge-base context (see "Output formats").
-
 Which subdivision the script call searches is decided by **one** thing: the
 subdivision picked in the UI (`subdivision` on the generate requests,
 `GET /api/track-subdivisions` for the list).
 
-There is deliberately no requirement → subdivision map any more. A stored
+There is deliberately no requirement -> subdivision map any more. A stored
 map and a picker are two answers to the same question, and the one the user
 just chose in front of the result has to win — so keeping both only created
 a way for the control to appear to do nothing. The picker is **required**
@@ -231,26 +212,19 @@ mileposts from track the requirement is not tested on, and a wrong value
 that looks right is worse than the `# TODO:` the model writes when the
 track block is empty.
 
-One consequence worth knowing: `HybridRetriever` no longer runs a track
-pass at all. It only ever searches the embedded `knowledge_base`
-collection; track data reaches the prompt solely through
-`static_context.py`. (That pass had in fact been dead since track data
-moved out of ingestion — it filtered the embedded collection for a
-`document_type` that is no longer ingested.)
-
-`data/Examples/` (config `examples_dir`) holds requirement → reference test
-cases → reference script triples for a handful of other requirements. It is
+`data/Examples/` (config `examples_dir`) holds requirement -> reference test
+cases -> reference script triples for a handful of other requirements. It is
 **not read at request time.** Nothing in it reaches the model directly.
 
 Its patterns are distilled by hand into two templates in
 `config/prompts.yaml` — the **house wording pattern** in the `test_cases`
 system prompt (how a datasheet `description` is phrased: condition bullets,
 a bare `Verify` line, one observable behaviour) and the **house skeleton**
-in the `test_script` system prompt (encoding comment → docstring → import →
-`main()` → `handle_test_case` branch table → `# User Defined Functions` →
-`__main__` guard, plus the two branch styles and the fixed conventions).
+in the `test_script` system prompt (encoding comment -> docstring -> import
+-> `main()` -> `handle_test_case` branch table -> `# User Defined Functions`
+-> `__main__` guard, plus the two branch styles and the fixed conventions).
 
-Sending the files instead cost ~8–10k characters on *every* generation, all
+Sending the files instead cost ~8-10k characters on *every* generation, all
 of it prefill, and all of it byte-identical from one request to the next —
 repeated work to teach the model a shape that never changes. The distilled
 templates live in the **system** prompt, which is both where "how to write"
@@ -288,8 +262,8 @@ Any TBC/CFG/THE identifier the requirement states is looked up by exact id in
 the whole parameter block** — nothing is padded in beside them and
 `static_parameter_top_k` does not apply. BM25 ranks the remaining ~900
 records on shared prose, and the guide is 900 records of the same prose: on
-a work-zone requirement naming TBC290 and CFG22, `TBC412` ("…calculated
-position uncertainty of the leading edge of the train…") scored *above*
+a work-zone requirement naming TBC290 and CFG22, `TBC412` ("...calculated
+position uncertainty of the leading edge of the train...") scored *above*
 TBC290's own record and filled a padding slot, where `_format_hits` presents
 every record identically and the prompt calls the block the only place a
 value may come from. A parameter the requirement never mentions is not a
@@ -299,17 +273,9 @@ and one the reviewer cannot spot once it is written into a finished case.
 names no identifier at all; the identifier boost below is what makes that
 ranking sound.
 
-The PDF deliberately **stays** in `data/knowledge_base/` and stays embedded.
-The two are not redundant: the records answer "what is TBC137's valid range",
-the embedded prose answers the questions the surrounding sections explain —
-but only for the script call. Both generations pull the records; only the
-script call also retrieves the embedded prose. The datasheet call does not
-run the embedded knowledge base's hybrid retrieval at all (see "Hybrid
-retrieval" below).
-
 The conversion is a build step, not a request-time parse: nothing reads the
-PDF while the app runs. Re-run the script for a new revision of the guide,
-then restart the server.
+guide PDF while the app runs. Re-run the script for a new revision, then
+restart the server.
 
 ### Requirement -> folder mapping (`src/rag/caf_mapping.py`)
 
@@ -330,7 +296,7 @@ value down; lookups are case- and whitespace-insensitive, and `L2R8279_A`
 falls back to `L2R8279`. Re-run the conversion script whenever `data/CAF.xlsx`
 changes — the app is not watching the workbook, only the JSON file the
 script produces, which it re-reads whenever that file's mtime changes (no
-restart, no ingestion).
+restart needed).
 
 When the mapping covers a requirement, that feature is what every generated
 row's `Folder` carries — the value overwrites whatever the model wrote
@@ -341,13 +307,12 @@ doesn't cover yet. `POST /api/requirements/folder` resolves it through the
 same call without touching the model, so the UI shows the folder under the
 requirement box as soon as the requirement number is typed.
 
-### Hybrid retrieval (`src/rag/retriever.py`, `keyword_index.py`)
+### Keyword retrieval (`src/rag/keyword_index.py`)
 
-Two independent rankings over the embedded `knowledge_base` collection,
-fused with reciprocal rank fusion (RRF, combines by rank not score):
-- **Dense** (BGE-M3 cosine over ChromaDB) — catches paraphrase.
-- **Keyword** (BM25) — catches exact identifiers dense search blurs (`TBC137`
-  vs `TBC139`, block `1015` vs `1025`, API names).
+One ranking, BM25 over every chunk of the static index. There is no dense
+arm, no fusion and no vector store: the sources are identifier-dense records,
+which is what BM25 is good at, and the embedding stack that used to sit
+alongside it has been removed entirely.
 
 Query tokens that mix letters and digits (`tbc137`, `l2r7983`, `iv132`) are
 counted `_IDENTIFIER_BOOST` times on the **query** side only
@@ -361,13 +326,10 @@ query instead was tried and is worse (18th): the repeated prose is evidence
 too. Bare numbers are deliberately not boosted — the corpus is full of them
 and IDF already separates a rare one.
 
-`dense_weight`/`keyword_weight` in `config/rag_config.yaml` tune the balance;
-0 disables an arm. BM25 index is built in-process from the collection and
-rebuilt whenever chunk count changes.
-
-This pass runs only for the script call now. Test-case generation
-(`TestCaseGenerator`) is not constructed with a `HybridRetriever` at all —
-see "Static context" and "parameter_config" above for what replaces it.
+Scoring is memoised per query token set: `BM25Okapi.get_scores` walks every
+chunk in Python, and one script request scores the same query three times
+(API pass, track pass, parameter pass), differing only in the metadata filter
+applied afterwards. Don't reintroduce repeated unmemoised scans.
 
 ### Output formats (`src/rag/exporters.py`)
 
@@ -458,14 +420,13 @@ check `llm_model`/`llm_think` in `config/rag_config.yaml`.
 Every concrete value in a generated artefact — subdivision, block, milepost,
 switch, signal, TBC parameter, API name — must come from a real source for
 *that* requirement: track values from `data/track_data/` (via
-`static_context.py`), parameters/message names from `data/knowledge_base/`,
-API names/kwargs from `data/python_apis/`, TBC/CFG/THE values, units and
-valid ranges from `data/parameter_config/`. `data/Examples/` fixes shape only;
-copying one of its concrete values into a new artefact is a defect. A
-prompt can only obey "don't guess" if it actually contains a real source for
-the values it asks for — this is why script generation runs its own
-track-data and static-API passes rather than relying on the reference
-scripts alone.
+`static_context.py`), API names/kwargs from `data/python_apis/`, and
+TBC/CFG/THE values, units and valid ranges from `data/parameter_config/`.
+`data/Examples/` fixes shape only; copying one of its concrete values into a
+new artefact is a defect. A prompt can only obey "don't guess" if it actually
+contains a real source for the values it asks for — this is why script
+generation runs its own track-data and static-API passes rather than relying
+on the reference scripts alone.
 
 ### Prompts (`config/prompts.yaml`)
 
@@ -488,11 +449,13 @@ into a user-facing "number of cases" input.
 The generation call is the floor on request latency; everything else is
 arranged to not add to it. When touching `src/rag/` or `src/api/`, preserve these:
 
-- Embedding cache keyed on exact text (`cache.py`) — nothing is embedded twice.
 - BM25 scoring is memoised per query (`keyword_index.py`) — don't reintroduce
   repeated scans of the same query with only the metadata filter differing.
-- Both arms of a retrieval pass (ChromaDB HNSW query, BM25 scan) run
-  concurrently via the pool in `concurrency.py` (`RAG_RETRIEVAL_WORKERS`).
+  One script request runs three passes over the same query, so this is what
+  keeps retrieval off the critical path.
+- The BM25 index is built once per process, at first use, under a lock
+  (`services.py`). It takes about two seconds over ~7,000 chunks, and
+  `warm_up()` pays even that at startup so no request does.
 - Generation endpoints in `src/api/main.py` are `async`; a semaphore
   (`MAX_CONCURRENT_GENERATIONS`, default 1) serializes actual generations
   since a CPU-bound model does not get faster with concurrent requests — it
@@ -575,11 +538,11 @@ Follow the same rule for any future model-dependent behaviour: probe the
 server for the capability, default to `auto`, don't hard-code model names.
 
 If generations are too slow: lower `llm_max_tokens`/`script_max_tokens`,
-lower `retrieval_top_k`/`max_context_chars`, or switch `llm_model` to a
-smaller variant in config — no code change needed for any of these. Script
-generation is the slowest call in the app (it sends API stubs, track data
-and data-dictionary context, then writes the longest output), so it is the
-one that runs into the budget first.
+lower the `static_*_top_k` values, or switch `llm_model` to a smaller variant
+in config — no code change needed for any of these. Script generation is the
+slowest call in the app (it sends API stubs, track data and parameter
+records, then writes the longest output), so it is the one that runs into the
+budget first.
 
 Prefer reducing the *unchanging* parts of the prompt over the retrieved
 parts. On CPU, prefill is a real fraction of wall clock — not the rounding
@@ -593,22 +556,21 @@ resort, not the first: that is the grounding the output depends on.
 
 | File | Controls |
 |---|---|
-| `config/config.yaml` | `sources` (embedded), `static_sources` (BM25-only), `examples_dir` (design-time only), chunk sizes, PDF heuristics, embedding model, ChromaDB location |
-| `config/rag_config.yaml` | Hybrid-search weights/depth, context budget, static-context top-k, Ollama host/model/limits/timeouts, `max_test_cases` ceiling |
+| `config/config.yaml` | `static_sources` (every folder read), `examples_dir` (design-time only), chunk sizes, PDF heuristics, chunk tokenizer |
+| `config/rag_config.yaml` | Static-context top-k, Ollama host/model/limits/timeouts, `max_test_cases` ceiling |
 | `config/prompts.yaml` | Every system and user prompt |
 | `data/parameter_config/*.json` | TBC/CFG/THE parameter records — generated from the guide PDF by `scripts/convert_parameter_guide.py` |
 | `config/caf_mapping.json` | Requirement → feature, i.e. the datasheet's `Folder` column — generated from `data/CAF.xlsx` by `scripts/convert_caf_mapping.py` |
-| `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, `RAG_RETRIEVAL_WORKERS`, Ollama host override, frontend dev-server port/proxy target |
+| `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, Ollama host override, frontend dev-server port/proxy target |
 
 Prefer adding new behavior-affecting knobs to `config/*.yaml`, and new
 per-machine values to `.env` — this split is intentional throughout the repo.
 
 ### Abstraction points
 
-`EmbeddingModel` and `LLMClient` (in `src/rag/`) are protocols specifically so
-a served embedding endpoint or a different inference server (vLLM, llama.cpp,
-any OpenAI-compatible API) can replace either without touching the retrieval
-or generation pipeline.
+`LLMClient` (in `src/rag/`) is a protocol specifically so a different
+inference server (vLLM, llama.cpp, any OpenAI-compatible API) can replace
+Ollama without touching the retrieval or generation pipeline.
 
 ### API routes (`src/api/main.py`)
 
@@ -619,36 +581,34 @@ built static index so it can only offer track that actually parsed),
 `POST /api/test-cases`
 (datasheet generation), `POST /api/test-script` (script generation, second
 LLM call), `POST /api/test-cases/export` and `POST /api/test-script/export`
-(`.xlsx`/`.txt` downloads). `services.py` wires the shared retriever/generator
-instances; `models.py` holds the request/response schemas.
+(`.xlsx`/`.txt` downloads). `services.py` wires the shared static-context and
+generator instances; `models.py` holds the request/response schemas.
+
+`/api/health` reports `indexed_chunks` (how much the BM25 index holds) and
+whether the configured model is reachable.
 
 ### Layout
 
 ```
 config/                     config.yaml, rag_config.yaml, prompts.yaml, caf_mapping.json
-data/knowledge_base/         PDF · XLSX · TXT (embedded)
-data/python_apis/            PY · PYI (static, BM25-only)
-data/track_data/<subdiv>/    HTML report + -subdiv.xml (static, BM25-only)
-data/parameter_config/       parameter records (static, BM25-only); generated, not hand-edited
+data/knowledge_base/         source PDFs for the converter scripts; NOT read at request time
+data/python_apis/            PY · PYI (indexed)
+data/track_data/<subdiv>/    <subdiv>-subdiv.xml (indexed)
+data/parameter_config/       parameter records (indexed); generated, not hand-edited
 data/Examples/               reference triples; design-time source for the prompts.yaml templates, not read at request time
 data/CAF.xlsx                requirement -> feature (Folder) source; converted, not read at request time
 scripts/convert_caf_mapping.py   data/CAF.xlsx -> config/caf_mapping.json
 scripts/convert_parameter_guide.py  guide PDF -> data/parameter_config/
 src/kb_ingestion/
-  extractors/                 one parser per format (pdf, xlsx, python, html, xml, text, json)
+  extractors/                 one parser per format (python, xml, json; pdf/xlsx/text kept, unused)
   chunking.py                 normalisation, token budgets, chunk metadata
-  incremental.py               fingerprint behind the unchanged-file skip
-  embeddings.py                BGE-M3 wrapper
-  vector_store.py              ChromaDB wrapper
-  pipeline.py                   orchestration
+  pipeline.py                   discover -> extract -> chunk, in memory
 src/rag/
   requirement_parser.py        requirement ID + functional area
   caf_mapping.py                requirement -> feature (the Folder column), from config/caf_mapping.json
-  static_context.py             python_apis/track_data/parameter_config, BM25-only, never embedded
-  keyword_index.py               BM25 arm over the embedded collection
-  retriever.py                   hybrid search + RRF + context assembly
-  cache.py                       embedding / result caches
-  concurrency.py                 the retrieval thread pool
+  static_context.py             the BM25 index over every source folder, and the searches over it
+  keyword_index.py               BM25 scoring, tokenization, identifier boost
+  cache.py                       the generation result cache
   prompts.py                     prompts.yaml loader
   schema.py                      datasheet rows, model-output parsing, truncation salvage
   llm_client.py                  Ollama behind a protocol
@@ -656,5 +616,4 @@ src/rag/
   exporters.py                   .xlsx and .txt
 src/api/                     FastAPI app (main.py), request/response models, service container
 frontend/                    React + Vite
-scripts/run_ingestion.py     ingestion CLI
 ```

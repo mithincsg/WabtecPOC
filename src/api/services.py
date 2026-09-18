@@ -8,16 +8,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from kb_ingestion.config import PipelineConfig
-from kb_ingestion.embeddings import LocalBGEM3Embedder
-from kb_ingestion.vector_store import VectorStore
-from rag.cache import EmbeddingCache, LruTtlCache
+from rag.cache import LruTtlCache
 from rag.caf_mapping import CafMapping
 from rag.config import RAGSettings
 from rag.generator import TestCaseGenerator, TestScriptGenerator
-from rag.keyword_index import KeywordIndex
 from rag.llm_client import OllamaClient
 from rag.prompts import PromptLibrary
-from rag.retriever import HybridRetriever
 from rag.static_context import StaticContextProvider
 
 logger = logging.getLogger(__name__)
@@ -26,8 +22,7 @@ logger = logging.getLogger(__name__)
 # Generated rows are held for this long, so re-submitting the same
 # requirement (the reflex after a browser refresh, or while comparing two
 # wordings) answers instantly instead of spending minutes reproducing a
-# near-identical answer at temperature 0.2. Short enough that a knowledge-base
-# re-ingestion is reflected within the hour without a restart.
+# near-identical answer at temperature 0.2.
 _RESULT_CACHE_TTL_SECONDS = 60 * 60
 _RESULT_CACHE_ENTRIES = 32
 
@@ -35,13 +30,11 @@ _RESULT_CACHE_ENTRIES = 32
 class Services:
     """Everything the API needs, built once and shared.
 
-    The heavy pieces — the BGE-M3 weights and the BM25 index — are built on
-    first use rather than at import, so the server starts immediately and
-    `/api/health` answers even if the model hasn't loaded yet. Every lazy
-    property is guarded by the same lock: two concurrent first requests would
-    otherwise each load the embedding model, doubling peak memory on a
-    machine that may not have the headroom, and each build their own BM25
-    index over the whole corpus.
+    The one heavy piece — the BM25 index over every source folder — is built
+    on first use rather than at import, so the server starts immediately and
+    `/api/health` answers before it is ready. The lock is what keeps two
+    concurrent first requests from each building their own index over the
+    whole corpus.
     """
 
     def __init__(self, repo_root: Path):
@@ -64,14 +57,10 @@ class Services:
         self.caf_mapping = CafMapping(self.ingestion_config.caf_mapping_file)
         self.llm_client = OllamaClient(self.settings.generation)
 
-        # Re-entrant: the lazy properties below are layered (retriever needs
-        # the embedder, which needs the lock), and a plain Lock would
-        # deadlock the first request that walks the whole chain.
+        # Re-entrant: the generators below are built from the static context,
+        # which needs the same lock, and a plain Lock would deadlock the first
+        # request that walks the whole chain.
         self._lock = threading.RLock()
-        self._embedder = None
-        self._vector_store: VectorStore | None = None
-        self._keyword_index: KeywordIndex | None = None
-        self._retriever: HybridRetriever | None = None
         self._static_context: StaticContextProvider | None = None
         self._test_case_generator: TestCaseGenerator | None = None
         self._script_generator: TestScriptGenerator | None = None
@@ -81,55 +70,6 @@ class Services:
         )
 
     # --- lazily built ------------------------------------------------------
-
-    @property
-    def embedder(self):
-        if self._embedder is None:
-            with self._lock:
-                if self._embedder is None:
-                    retrieval = self.settings.retrieval
-                    # Wrapped in a cache because the same requirement query
-                    # is embedded once per retrieval pass, so repeat requests
-                    # re-embed text that has not changed.
-                    self._embedder = EmbeddingCache(
-                        LocalBGEM3Embedder(
-                            model_name=retrieval.embedding_model,
-                            device=retrieval.embedding_device,
-                        )
-                    )
-        return self._embedder
-
-    @property
-    def vector_store(self) -> VectorStore:
-        if self._vector_store is None:
-            with self._lock:
-                if self._vector_store is None:
-                    retrieval = self.settings.retrieval
-                    self._vector_store = VectorStore(
-                        retrieval.chroma_persist_dir, retrieval.chroma_collection
-                    )
-        return self._vector_store
-
-    @property
-    def keyword_index(self) -> KeywordIndex:
-        if self._keyword_index is None:
-            with self._lock:
-                if self._keyword_index is None:
-                    self._keyword_index = KeywordIndex(self.vector_store)
-        return self._keyword_index
-
-    @property
-    def retriever(self) -> HybridRetriever:
-        if self._retriever is None:
-            with self._lock:
-                if self._retriever is None:
-                    self._retriever = HybridRetriever(
-                        embedder=self.embedder,
-                        vector_store=self.vector_store,
-                        config=self.settings.retrieval,
-                        keyword_index=self.keyword_index,
-                    )
-        return self._retriever
 
     @property
     def static_context(self) -> StaticContextProvider:
@@ -159,7 +99,6 @@ class Services:
             with self._lock:
                 if self._script_generator is None:
                     self._script_generator = TestScriptGenerator(
-                        retriever=self.retriever,
                         llm_client=self.llm_client,
                         prompts=self.prompts,
                         max_tokens=self.settings.generation.script_max_tokens,
@@ -186,20 +125,14 @@ class Services:
     # --- startup -----------------------------------------------------------
 
     def warm_up(self) -> None:
-        """Pays the two startup costs — loading the embedding model and
-        loading the LLM weights into Ollama — while the user is still reading
-        the page, rather than on their first request. Failures are logged and
+        """Pays the two startup costs — building the BM25 index and loading
+        the LLM weights into Ollama — while the user is still reading the
+        page, rather than on their first request. Failures are logged and
         swallowed: a cold start is slow, not broken.
         """
         try:
-            self.embedder.embed(["warm up"])
-            logger.info("Embedding model ready")
-        except Exception:  # noqa: BLE001
-            logger.exception("Could not preload the embedding model")
-
-        try:
             self.static_context  # noqa: B018 - property access builds the BM25 corpus
-            logger.info("Static context (python_apis, track_data, Examples) ready")
+            logger.info("Static context (python_apis, track_data, parameter_config) ready")
         except Exception:  # noqa: BLE001
             logger.exception("Could not preload static context")
 

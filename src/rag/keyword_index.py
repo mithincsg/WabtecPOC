@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # "TBC137", "L2R9479", "08880", "wcr_loco_sim", "IV132.0". Splitting on
 # non-alphanumerics but keeping digits attached to their letters preserves
 # parameter and requirement identifiers as single tokens, which is exactly
-# what keyword search is here to catch and what a dense embedding tends to
-# smear across near-neighbours.
+# what a requirement names and what a generated script has to get exactly
+# right.
 _TOKEN_RE = re.compile(r"[A-Za-z]+(?:\d+[A-Za-z]*)*|\d+")
 
 
@@ -81,36 +81,29 @@ class _Corpus:
 
 
 class KeywordIndex:
-    """BM25 over every chunk in the collection — the lexical half of hybrid
-    search.
+    """BM25 over every chunk of every source — the app's only retrieval arm.
 
-    Chroma stores the dense vectors but no inverted index, so this is built
-    in process from the collection's documents. It is rebuilt when the chunk
-    count changes (i.e. after an ingestion run), and otherwise reused; on a
-    knowledge base of this size the build is well under a second, so there's
-    no persistence layer to keep in sync.
+    Built in process from the store's documents, and rebuilt whenever the
+    chunk count changes; on a corpus of this size the build is well under a
+    second, so there's no persistence layer to keep in sync.
 
     Scoring, unlike the build, is *not* cheap: `BM25Okapi.get_scores` walks
     every chunk in Python for every query. One request scores the same query
-    against the same corpus several times over — the general pass and the
-    track pass, then the API and reference-script passes during script
-    generation — differing only in the metadata filter applied afterwards.
-    Scores are therefore memoised per token set, which reduces the repeat
-    passes to a filtered walk of an array that already exists.
+    against the same corpus several times over — the API pass, the track pass
+    and the parameter pass during script generation — differing only in the
+    metadata filter applied afterwards. Scores are therefore memoised per
+    token set, which reduces the repeat passes to a filtered walk of an array
+    that already exists.
     """
 
-    def __init__(self, vector_store, score_cache_entries: int = 64):
-        self._vector_store = vector_store
+    def __init__(self, store, score_cache_entries: int = 64):
+        self._store = store
         self._lock = threading.Lock()
         self._score_cache_entries = score_cache_entries
         self._corpus: _Corpus | None = None
 
     def _ensure_built(self) -> _Corpus | None:
-        # `count()` is checked on every search, as it always was: the store
-        # caches it behind a short TTL and invalidates that on every write,
-        # so this is a dictionary lookup rather than a ChromaDB round trip,
-        # and an ingestion is still noticed as soon as it lands.
-        count = self._vector_store.count()
+        count = self._store.count()
         corpus = self._corpus
         if corpus is not None and corpus.count == count:
             return corpus
@@ -122,7 +115,7 @@ class KeywordIndex:
             if corpus is not None and corpus.count == count:
                 return corpus
 
-            ids, texts, metadatas = self._vector_store.get_all_documents()
+            ids, texts, metadatas = self._store.get_all_documents()
             tokenized = [tokenize(t) for t in texts]
             if not tokenized:
                 # BM25Okapi divides by the corpus average document length, so

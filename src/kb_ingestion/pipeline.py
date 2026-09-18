@@ -16,10 +16,7 @@ from .chunking import (
     normalize_text,
 )
 from .config import PipelineConfig, SourceRoot
-from .embeddings import EmbeddingModel
 from .extractors import EXTRACTORS_BY_SUFFIX, ExtractedUnit, PDFExtractor
-from .incremental import compute_pipeline_fingerprint
-from .vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -48,22 +45,12 @@ class DiscoveredFile:
     source_path: str
 
 
-@dataclass
-class IngestionStats:
-    files_seen: int = 0
-    files_processed: int = 0
-    files_skipped: int = 0
-    files_failed: int = 0
-    chunks_upserted: int = 0
-    chunks_deleted: int = 0
-
-
 def discover_files(config: PipelineConfig) -> list[DiscoveredFile]:
     """Every supported file under every configured source root, tagged with
     the document_type that root (or its subfolder) assigns.
     """
     found: list[DiscoveredFile] = []
-    for source in config.sources:
+    for source in config.static_sources:
         if not source.path.is_dir():
             logger.warning("Source folder does not exist, skipping: %s", source.path)
             continue
@@ -120,7 +107,6 @@ def _chunk_row_units(
     source_file: str,
     document_type: str,
     file_hash: str,
-    embedding_model: str,
 ) -> list[PreparedChunk]:
     """Spreadsheet rows, grouped by sheet so two sheets' rows never land in
     one chunk. With xlsx_max_rows_per_chunk at its default of 1 this is one
@@ -156,7 +142,6 @@ def _chunk_row_units(
                         chunk_index=idx,
                         total_chunks_in_unit=len(row_chunks),
                         file_hash=file_hash,
-                        embedding_model=embedding_model,
                         text=row_chunk.text,
                         row_start=row_chunk.row_start,
                         row_end=row_chunk.row_end,
@@ -175,7 +160,6 @@ def chunk_file(
     source_file: str,
     document_type: str,
     file_hash: str,
-    embedding_model: str,
     module_name: str | None = None,
 ) -> list[PreparedChunk]:
     row_units = [u for u in units if u.unit_type == "test_case"]
@@ -189,7 +173,6 @@ def chunk_file(
         source_file=source_file,
         document_type=document_type,
         file_hash=file_hash,
-        embedding_model=embedding_model,
     )
 
     for unit in other_units:
@@ -212,7 +195,6 @@ def chunk_file(
                         chunk_index=idx,
                         total_chunks_in_unit=len(texts),
                         file_hash=file_hash,
-                        embedding_model=embedding_model,
                         text=text,
                         module_name=module_name,
                     ),
@@ -222,30 +204,23 @@ def chunk_file(
     return prepared
 
 
-class IngestionPipeline:
-    def __init__(
-        self,
-        config: PipelineConfig,
-        embedder: EmbeddingModel | None = None,
-        vector_store: VectorStore | None = None,
-    ):
-        self.config = config
-        self.counter = TokenCounter(config.embedding_model)
-        self.embedder = embedder
-        self.vector_store = vector_store
-        self.fingerprint = compute_pipeline_fingerprint(config)
+class ChunkingPipeline:
+    """Source folders -> chunks, in memory.
 
-    def reset(self) -> None:
-        if self.vector_store is not None:
-            self.vector_store.reset()
+    Nothing is embedded or persisted: every source the app reads is held in
+    the in-process BM25 index that src/rag/static_context.py builds from
+    these chunks on startup.
+    """
+
+    def __init__(self, config: PipelineConfig):
+        self.config = config
+        self.counter = TokenCounter()
 
     def prepare_file(
         self, file: DiscoveredFile, file_hash: str | None = None
     ) -> tuple[str, list[PreparedChunk]]:
-        """Extract, normalize, chunk and build metadata for one file. Touches
-        neither the embedder nor the vector store, so it works standalone for
-        --dry-run and for tests. Pass a precomputed hash to avoid re-reading
-        a file the caller already hashed.
+        """Extract, normalize, chunk and build metadata for one file. Pass a
+        precomputed hash to avoid re-reading a file the caller already hashed.
         """
         file_hash = file_hash if file_hash is not None else file_sha256(file.path)
         module_name = (
@@ -253,7 +228,7 @@ class IngestionPipeline:
         )
 
         units = extract_and_normalize(file.path, self.config)
-        chunks = chunk_file(
+        return file_hash, chunk_file(
             units,
             self.config,
             self.counter,
@@ -261,73 +236,5 @@ class IngestionPipeline:
             source_file=file.path.name,
             document_type=file.document_type,
             file_hash=file_hash,
-            embedding_model=self.config.embedding_model,
             module_name=module_name,
         )
-        for chunk in chunks:
-            chunk.metadata.pipeline_fingerprint = self.fingerprint
-        return file_hash, chunks
-
-    def run(self, dry_run: bool = False, prune: bool = False) -> IngestionStats:
-        if not dry_run and (self.embedder is None or self.vector_store is None):
-            raise ValueError("embedder and vector_store are required unless dry_run=True")
-
-        stats = IngestionStats()
-        files = discover_files(self.config)
-        seen_source_paths: set[str] = set()
-
-        for file in files:
-            stats.files_seen += 1
-            seen_source_paths.add(file.source_path)
-
-            current_hash = None
-            if not dry_run:
-                # Hashing raw bytes is cheap next to parsing, so an unchanged
-                # file skips extraction and chunking too, not just embedding.
-                current_hash = file_sha256(file.path)
-                state = self.vector_store.get_file_state(file.source_path)
-                if state == (current_hash, self.fingerprint):
-                    stats.files_skipped += 1
-                    logger.debug("Unchanged, skipping: %s", file.source_path)
-                    continue
-
-            try:
-                _file_hash, chunks = self.prepare_file(file, file_hash=current_hash)
-            except Exception:
-                logger.exception("Failed to process %s", file.path)
-                stats.files_failed += 1
-                continue
-
-            logger.info(
-                "%s [%s] -> %d chunks", file.source_path, file.document_type, len(chunks)
-            )
-
-            if dry_run:
-                stats.files_processed += 1
-                continue
-
-            # Drop this file's previous chunks before inserting the new ones,
-            # so a changed file with different chunk boundaries leaves nothing
-            # stale behind.
-            stats.chunks_deleted += self.vector_store.delete_by_source_path(file.source_path)
-
-            if chunks:
-                texts = [c.text for c in chunks]
-                embeddings = self.embedder.embed(texts)
-                self.vector_store.upsert(
-                    [c.metadata.chunk_id for c in chunks],
-                    embeddings,
-                    texts,
-                    [c.metadata.to_chroma_dict() for c in chunks],
-                )
-                stats.chunks_upserted += len(chunks)
-
-            stats.files_processed += 1
-
-        if not dry_run and prune:
-            for stale in self.vector_store.get_all_source_paths() - seen_source_paths:
-                deleted = self.vector_store.delete_by_source_path(stale)
-                stats.chunks_deleted += deleted
-                logger.info("Pruned deleted file: %s (%d chunks)", stale, deleted)
-
-        return stats
