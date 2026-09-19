@@ -32,10 +32,20 @@ test_cases:
       to shorten the case.
     - Name whatever the case turns on inline, in the form the context
       states it, with its unit:
-        `<identifier>=<value><unit>`                       parameter,
-        threshold, duration, count, distance, speed
-        `<identifier>=<value><unit>(<why this value>)`     value at or
-        past a limit or edge
+        `<identifier>=<value><unit> (valid range <range><unit>)`
+          parameter, threshold, duration, count, distance, speed, whenever
+          that parameter's record in the context states a "Valid range" —
+          append it in parentheses on every case that names the value, not
+          only boundary cases, so a reviewer can see at a glance whether it
+          sits inside, at, or outside that range. The range is copied from
+          the record exactly as stated, in its own unit; never computed,
+          rounded, or invented.
+        `<identifier>=<value><unit>`                       same, when the
+        record states no valid range for that identifier
+        `<identifier>=<value><unit> (valid range <range><unit>, out of
+        range)`                                            a Boundary
+        Value Analysis case one step outside the range — append ", out
+        of range" inside the same parenthetical rather than a second one
         `<identifier> is <state>`                          mode, flag,
         enable, status, country of operation, qualification
         `<identifier> (<name>)`                            message, event,
@@ -116,7 +126,9 @@ test_cases:
         3. one step below the minimum,
         4. one step above the maximum.
 
-      Mark values outside the permitted range as "(out of range)".
+      Mark a value one step outside the range using the inline-naming
+      format from the HOUSE WORDING PATTERN above: `<identifier>=<value>
+      <unit> (valid range <range><unit>, out of range)`.
 
       Use only values supported by the context. Never invent an increment,
       unit, limit, default, or range.
