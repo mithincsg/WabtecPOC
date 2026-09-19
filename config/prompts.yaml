@@ -14,7 +14,7 @@ test_cases:
       <subject> <the configuration or trigger under test, stated as fact>
       -<qualifying condition that must hold>
       -<qualifying condition that must hold>
-      and
+
       <the setting or state that distinguishes this case>
 
       Verify
@@ -33,13 +33,13 @@ test_cases:
     - Name whatever the case turns on inline, in the form the context
       states it, with its unit:
         `<identifier>=<value><unit>`                       parameter,
-          threshold, duration, count, distance, speed
+        threshold, duration, count, distance, speed
         `<identifier>=<value><unit>(<why this value>)`     value at or
-          past a limit or edge
+        past a limit or edge
         `<identifier> is <state>`                          mode, flag,
-          enable, status, country of operation, qualification
+        enable, status, country of operation, qualification
         `<identifier> (<name>)`                            message, event,
-          target type, component or fault code
+        target type, component or fault code
 
     Rules:
     - Never emit an identifier or value the context does not contain —
@@ -71,44 +71,220 @@ test_cases:
       the condition in words (`<identifier> at its configured value`) and
       name the missing bound in "comments". An unsupported number the
       reviewer cannot spot is a defect.
-    - Cover the positive path first, then derive further cases by each of
-      the three techniques the requirement supports:
-      - Equivalence Partitioning: one representative case per class of
-        inputs that behave alike — each enumerated type, state, direction
-        or mode the requirement names, each alternative of an "or" it
-        states, and each value class inside a range. One case per class,
-        never two from the same class.
-      - Boundary Value Analysis: every limit the context states — each
-        parameter record's valid-range endpoints, each threshold, count,
-        duration or distance the requirement states — gets all four of:
-        the minimum, the maximum, one step below the minimum, one step
-        above the maximum, in the limit's own unit, the last two marked
-        `(out of range)`. Four per limit, not one.
-      - Cause Effect Testing: take the conditions the requirement needs to
-        hold and invert them one at a time. One case per condition, that
-        condition stated in its failing form, every other condition
-        unchanged, verifying the behaviour does not occur. Then any
-        combination whose interaction the requirement makes observable.
-      Skip a technique only where the requirement offers nothing for it,
-      and say so in that requirement's last case's "comments". Do not
-      restate a case you have written.
+
+    TEST TECHNIQUE SELECTION AND TEST DESIGN:
+
+    Cover the positive path first, then derive further cases using every
+    applicable test technique below.
+
+    A technique is applicable only when the requirement contains a
+    condition, input, state, transition, combination, boundary, error
+    opportunity, or other testable structure that the technique is designed
+    to exercise.
+
+    Do not force a technique when the requirement provides nothing meaningful
+    for it. Do not invent conditions, values, states, transitions, error
+    scenarios, input dimensions, or combinations merely to make a technique
+    applicable.
+
+    - Equivalence Partitioning:
+      Divide the relevant input, condition, state, mode, type, direction,
+      or other testable domain into classes that are expected to behave
+      equivalently.
+
+      Create at least one representative case for each distinct class
+      explicitly supported by the requirement or context.
+
+      For enumerated values, states, modes, directions, or explicit
+      alternatives, cover each distinct class.
+
+      For ranges, identify the meaningful value classes supported by the
+      requirement and context.
+
+      Do not create multiple representatives from the same equivalence
+      class unless another applicable technique requires a materially
+      different value.
+
+    - Boundary Value Analysis:
+      Apply this where the requirement or context defines a numeric range,
+      limit, threshold, count, duration, distance, speed, or other ordered
+      boundary.
+
+      For each applicable stated limit, cover:
+        1. the minimum,
+        2. the maximum,
+        3. one step below the minimum,
+        4. one step above the maximum.
+
+      Mark values outside the permitted range as "(out of range)".
+
+      Use only values supported by the context. Never invent an increment,
+      unit, limit, default, or range.
+
+      If the context does not establish what "one step" means, do not invent
+      a step size. State the boundary condition in words and record the
+      missing information in "comments".
+
+    - Decision Table Testing:
+      Apply this where the requirement contains multiple conditions or
+      inputs whose combinations determine different expected outcomes.
+
+      Identify the relevant conditions and their possible states.
+
+      Construct the meaningful combinations implied by the requirement and
+      identify the expected outcome for each combination that the
+      requirement makes distinguishable.
+
+      Create one test case for each distinct combination or outcome that
+      must be verified.
+
+      Include the positive combination and relevant negative combinations
+      where the requirement defines their expected behavior.
+
+      Do not create combinations that are outside the requirement's stated
+      scope.
+
+      Do not invent condition states or outcomes that are not supported by
+      the requirement or context.
+
+      Do not duplicate combinations already covered by another test case
+      unless the decision table requires a materially different condition
+      combination.
+
+    - State Transition Testing:
+      Apply this where the requirement describes system states, modes,
+      events, triggers, transitions, entry conditions, exit conditions, or
+      behavior that changes according to the current state.
+
+      Identify the relevant source state, triggering event or condition,
+      resulting state, and observable behavior.
+
+      Create cases that exercise each relevant transition explicitly
+      supported by the requirement.
+
+      Cover valid transitions and explicitly specified invalid or prohibited
+      transitions when the requirement defines an observable behavior for
+      them.
+
+      Keep the starting state, triggering event, qualifying conditions, and
+      expected resulting state or behavior explicit.
+
+      Do not invent states, transitions, events, or state changes that are
+      not supported by the requirement or context.
+
+    - Error Guessing:
+      Apply this only where the requirement or supplied context identifies a
+      concrete error-prone condition, failure mode, invalid input, missing
+      condition, incorrect state, boundary-related failure, or other
+      specific defect opportunity.
+
+      Create a case that targets that known defect opportunity.
+
+      The error opportunity must be supported by the requirement or
+      retrieved context.
+
+      Do not rely on unsupported assumptions about how the system might
+      fail.
+
+      Do not invent error scenarios, failure modes, invalid values, or
+      tester experience that is not supported by the requirement or context.
+
+    - All Pairs Testing:
+      Apply this where the requirement contains multiple relevant input
+      dimensions, parameters, states, modes, configuration choices, or
+      other factors whose pairwise interaction is relevant to the required
+      behavior.
+
+      Identify the relevant dimensions and the supported values or classes
+      within each dimension.
+
+      Create cases so that every required pair of values across the
+      applicable dimensions is covered at least once.
+
+      Use only values and classes supported by the requirement or context.
+
+      Do not create arbitrary dimensions, values, or combinations.
+
+      If the requirement does not contain multiple relevant dimensions whose
+      pairwise interaction matters, do not apply this technique.
+
+      Do not generate a full Cartesian product when pairwise coverage is
+      sufficient for the requirement.
+
+    - Cause Effect Testing:
+      Apply this where the requirement defines multiple causes, conditions,
+      or inputs and one or more resulting effects or observable behaviors.
+
+      Identify the relevant causes and effects.
+
+      Create cases that exercise the required relationships between the
+      causes and effects.
+
+      Where the requirement requires multiple conditions to hold, invert
+      one required condition at a time while keeping the other required
+      conditions unchanged, and verify that the required behavior does not
+      occur when that condition is violated.
+
+      Also cover explicitly required interactions between causes when the
+      requirement makes their combined effect observable.
+
+      Do not invent causal relationships that are not stated or supported
+      by the requirement or context.
+
+    - A single test case may be derived from only one test technique and
+      therefore must contain exactly one value in "test_technique".
+
+    - When multiple techniques apply to the same requirement, generate the
+      cases required by each applicable technique.
+
+    - Do not duplicate a case solely because two techniques could describe
+      the same case. If an existing case already provides the required
+      coverage for another technique, reuse that coverage and do not create
+      a duplicate unless the second technique requires a materially
+      different test condition.
+
+    - The technique label identifies the technique that directly caused the
+      case to be included.
+
+    - Skip a technique only where the requirement offers nothing meaningful
+      for it.
+
+    - The requirement decides the final number of cases, not a target
+      number. Never add a case merely to make a technique appear, and never
+      drop a required behavior merely to reduce the count.
+
     - One test case = one verifiable behaviour. Two "Verify" lines means
       two test cases.
-    - The requirement decides the count, not a target number. Never add a
-      case to reach a count or drop a behaviour it states.
+
+    COVERAGE:
 
     Write "coverage" first and in full, before any test case. One line per
-    case you are going to write, naming what that case covers:
+    case you are going to write, naming exactly what that case covers.
+
+    Coverage must include, where applicable:
     - the requirement's positive path;
-    - each class the requirement enumerates — every named state, type,
-      direction, mode, alternative of an "or", and each value class inside
-      a range;
-    - four lines per limit the context or the requirement states — its
-      minimum, its maximum, one step below, one step above;
-    - one line per condition the requirement requires to hold, in its
-      failing form.
+    - each equivalence class identified from the requirement or context;
+    - each boundary value required by Boundary Value Analysis;
+    - each meaningful decision-table combination or outcome;
+    - each relevant state transition;
+    - each concrete error-prone condition or failure opportunity supported
+      by the requirement or context;
+    - each required pair of values across the relevant input dimensions for
+      All Pairs Testing;
+    - each required cause-effect relationship or meaningful condition
+      inversion.
+
+    Each coverage line must identify the technique responsible for the case
+    where practical.
+
     Then write "test_cases": one case per "coverage" line, in the same
-    order, same length. Stopping short of the list you wrote is a defect.
+    order, same length.
+
+    Every coverage line must correspond to exactly one test case.
+
+    Stopping short of the coverage list you wrote is a defect.
+
+    OUTPUT:
 
     Return ONLY a JSON object, no prose or fences:
 
@@ -123,7 +299,7 @@ test_cases:
           "folder": "<functional area>",
           "optimization_technique": "Default",
           "test_type": "<Positive or Negative, per this case>",
-          "test_technique": "<the technique this case was derived by>",
+          "test_technique": "<one of the seven allowed techniques>",
           "retired": "False",
           "scorable": "No",
           "comments": "<empty string, or the gap you had to work around>"
@@ -131,12 +307,23 @@ test_cases:
       ]
     }
 
-    "test_type": Positive or Negative. "test_technique" is exactly one of
-    "Equivalence Partitioning", "Boundary Value Analysis" or "Cause Effect
-    Testing" — the technique that case was derived by, per the rules
-    above. No other value. "optimization_technique" is Default unless the
-    context says otherwise. "retired" is always False. "scorable" is No
-    unless the context indicates otherwise.
+    "test_type": Positive or Negative.
+
+    "test_technique" is exactly one of:
+    "Boundary Value Analysis",
+    "Equivalence Partitioning",
+    "Decision Table Testing",
+    "State Transition Testing",
+    "Error Guessing",
+    "All Pairs Testing",
+    "Cause Effect Testing".
+
+    No other value is allowed.
+
+    "optimization_technique" is Default unless the context says otherwise.
+    "retired" is always False.
+    "scorable" is No unless the context indicates otherwise.
+
   user: |
     Requirement ID: $requirement_id
 
@@ -148,10 +335,13 @@ test_cases:
 
     List every case this requirement needs in "coverage" first, by the
     rules in your instructions, then write one test case per line of it.
+
     As a safety limit only, do not exceed $max_test_cases test cases in
     one response — if the requirement genuinely needs more, cover the most
     important behaviours and say so in the last case's "comments".
+
     $folder_hint
+
     Return the JSON object described in your instructions and nothing else.
 
 test_script:
@@ -257,6 +447,12 @@ test_script:
     - Parameter names and values (TBC###), message and event names,
       component and fault names, configuration defaults, limits and units
       -> the parameter-configuration / data-dictionary context.
+    - How calls for a comparable behaviour are usually sequenced together
+      -> a REFERENCE SCRIPT, when one is given below. It is a real approved
+      script for a similar past requirement, shown for its choreography and
+      call shapes only. Never take a subdivision, block, milepost, TBC
+      value, or message field from it — those still come only from the
+      track-data and parameter context above, for THIS requirement.
 
     Rules:
     - Never emit a subdivision, block, milepost, switch, signal or TBC
@@ -264,9 +460,13 @@ test_script:
       requirement. The house skeleton deliberately contains none; if you
       find yourself writing a plausible-looking number that no context
       block states, that is the failure this rule exists to stop.
-    - Do not invent API calls, rename their keyword arguments, or invent a
-      parameter, message, event, block or milepost that no context block
-      contains.
+    - Every call must match the API SURFACE context exactly: same function
+      name, same argument shape (a dict argument stays a dict with the same
+      keys; positional stays positional), nothing added, renamed, or
+      guessed. Do not invent a parameter, message, event, block or
+      milepost that no context block contains either. If no function in
+      the API SURFACE context covers a needed action, write
+      `# TODO: no matching API for <action>` instead of approximating one.
     - Every concrete value you do write must be traceable to the track-data
       or parameter context. Put a short trailing comment on the line naming
       where it came from, e.g. `# subdiv 08880, block 1015 (track data)` or
@@ -316,6 +516,9 @@ test_script:
     === PARAMETERS AND DATA DICTIONARY — the only source of TBC values,
     message/event names, defaults, limits and units ===
     $parameter_context
+
+    === REFERENCE SCRIPT — pattern only, never a source of values ===
+    $reference_script
 
     Write the complete automation script for this requirement, in the house
     skeleton from your instructions. Before each concrete value, satisfy

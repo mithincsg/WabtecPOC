@@ -1,0 +1,180 @@
+# This Python file uses the following encoding: utf-8
+"""Information contained in this document is proprietary and confidential to,
+and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland
+
+WaysideLibConstant.py
+=====================
+Translation tables ("constant groups") used by the Wayside wrapper
+(Sim_Interface/Wayside/WaysideLib.py). Each dictionary maps a *user-facing*
+value that a test author writes in a test script (the dictionary key) to the
+*internal protocol token* that WaysideClient.exe / WaysideServer.exe expect to
+receive through ScriptEngine.exe (the dictionary value).
+
+General rules for every group in this file:
+  * Test scripts provide the dictionary KEY (the lowercase, human-readable
+    word). Test scripts should NOT pass the internal value.
+  * The Wayside wrapper looks the key up and forwards the mapped VALUE inside
+    the SCM command string it sends through ScriptEngine.exe.
+  * The keys of a group are also used as the "allowed values" list that
+    Wayside.get_golden_data() feeds into validate_data(); an unrecognized key
+    is rejected before any command is sent.
+
+Domain terminology (derived from the track file, e.g. 08101-subdiv.xml):
+  * Subdivision (sub_id) - a section of railroad; every Wayside device belongs
+    to a subdivision.
+  * Wayside device      - a field device such as a signal or a switch,
+    identified by a device/SignalId/Switch id ("name" in the public methods).
+  * WIU / CP             - Wayside Interface Unit (a.k.a. communication point);
+    the radio unit that reports device status to the train. Referenced by
+    "cp_id" in the public API.
+  * Aspect / indication  - the reported state of a device (a signal shows an
+    aspect; a switch shows a normal/reverse indication).
+
+Do NOT change any key, value, capitalization, or spacing in this file: the
+values are literal protocol tokens consumed downstream.
+"""
+
+# --- acs_aspect_status ------------------------------------------------------
+# Domain concept : ACS (Automatic Cab Signal) aspect codes. These are
+#                  protocol translations: lowercase cab-signal aspect names ->
+#                  internal "acs*" tokens.
+# Applies to     : cab-signal aspect state (a signal / cab-signal subsystem).
+# Value kind     : protocol translations (internal "acs*" tokens).
+# User supplies  : the lowercase dictionary key (e.g. "clear").
+# Internal value : the "acs*" token (e.g. "acsCLEAR").
+#
+# REVIEW: This group is DEFINED but NOT CONSUMED anywhere in the Wayside source
+# tree. No public Wayside method reads acs_aspect_status, and Wayside's
+# set_signal() derives its aspect codes from the track file's DeviceStatusFeature
+# table (position "clear" -> DeviceStatusCode 8), not from this dictionary.
+# A near-identical table, hashACSAspectStatus, exists in
+# Sim_Interface/Loco/LocoLibConstant.py and IS used by the Loco wrapper's
+# SET_ACS_ASPECT command. Verified: the group is unused by Wayside. Unclear:
+# whether it is dead/vestigial code or reserved for a future Wayside ACS method.
+# Do not present these values as inputs to any current Wayside public method.
+acs_aspect_status = {
+    # No / absent cab-signal aspect. User supplies "none"; wrapper token "acsNONE".
+    'none': 'acsNONE',
+    # Cab signal fully cut out (disabled). User supplies "cutout" -> "acsCUTOUT".
+    'cutout': 'acsCUTOUT',
+    # Cab signal partially cut out. User supplies "partial cutout" -> "acsPARTIAL_CUTOUT".
+    'partial cutout': 'acsPARTIAL_CUTOUT',
+    # Clear / proceed (most permissive aspect). User supplies "clear" -> "acsCLEAR".
+    'clear': 'acsCLEAR',
+    # Advance approach (be prepared to reduce speed further ahead).
+    # User supplies "advance approach" -> "acsADVANCE_APPROACH".
+    'advance approach': 'acsADVANCE_APPROACH',
+    # Approach (prepare to stop at the next signal). User supplies "approach" -> "acsAPPROACH".
+    'approach': 'acsAPPROACH',
+    # Restricting (proceed at restricted speed prepared to stop).
+    # User supplies "restricting" -> "acsRESTRICTING".
+    'restricting': 'acsRESTRICTING',
+    # Fallback entry (capital "D"): resolves to the same token as "none".
+    # REVIEW: intended as a default when no aspect is chosen; because the group
+    # is unused, the exact trigger for "Default" is unverified. Keep the
+    # capital "D" - it appears to be an intentional literal.
+    'Default': 'acsNONE'
+}
+
+# --- device_indication ------------------------------------------------------
+# Domain concept : SWITCH position indications. Protocol translations from a
+#                  user-facing switch-position word to the internal "sw*" token.
+# Applies to     : a Wayside SWITCH device (reported switch position/indication).
+# Value kind     : commands/indications sent to set a switch's reported state.
+# Consumed by    : Wayside.set_switch() via the params['position'] parameter.
+#                  The KEYS of this dict are also the allowed-value list that
+#                  get_golden_data() supplies for set_switch validation
+#                  (position = [*WaysideLibConstant.device_indication]).
+# User supplies  : one lowercase key (e.g. "normal") in params['position'].
+# Internal value : the "sw*" token embedded in the SET_WAYSIDE_DEVICE_INDICATION
+#                  (and LOCO::MC_SET_SWITCH) command. In set_switch(), any
+#                  position not found here falls back to device_indication['error'].
+# Note           : test scripts use the KEYS; the "sw*" values are internal and
+#                  should not be entered directly by test authors.
+device_indication = {
+    # Switch lined/reported in the NORMAL (main-route) position.
+    # User supplies "normal"; wrapper token "swNORMAL".
+    'normal': 'swNORMAL',
+    # Switch position not determinable (e.g. mid-throw / conflicting inputs).
+    # User supplies "indeterminate" -> "swINDETERMINATE".
+    'indeterminate': 'swINDETERMINATE',
+    # Switch lined/reported in the REVERSE (diverging-route) position.
+    # User supplies "reverse" -> "swREVERSE".
+    'reverse': 'swREVERSE',
+    # Switch error/fault indication. User supplies "error" -> "swERROR".
+    # This is also the fallback token used when an unrecognized position is given.
+    'error': 'swERROR',
+    # Switch state unknown. User supplies "unknown" -> "swError".
+    # REVIEW: "unknown" maps to "swError" (mixed case) while "error" maps to
+    # "swERROR" (upper case). Confirm whether this capitalization difference is
+    # required by the Wayside protocol or is an unintended typo. Both keys are
+    # valid user inputs for set_switch, so the difference is observable in the
+    # emitted command string.
+    'unknown': 'swError'
+}
+
+# --- signal_types -----------------------------------------------------------
+# Domain concept : SIGNAL classification lookup. Maps the numeric SignalType
+#                  code that appears in the track file (the <SignalType> element
+#                  inside each <BlockSignalFeature>) to a human-readable signal
+#                  category name.
+# Applies to     : a Wayside SIGNAL device's type/category.
+# Value kind     : configuration/classification values (NOT protocol tokens and
+#                  NOT direct user input).
+# Consumed by    : Wayside.set_signal(). set_signal reads the signal's numeric
+#                  type from self.signal_type_table[name] (built from the track
+#                  XML) and passes it through signal_types.get(...) to decide how
+#                  to interpret the requested position. Specifically, types
+#                  '7', '8' and '9' (the track-circuit family) accept the
+#                  "hazard"/"track integrity" positions and are translated to
+#                  hdNORMAL / hdDETECTED; every other type resolves its position
+#                  through the track's DeviceStatusTable instead.
+# User supplies  : nothing here directly. The KEYS ("1".."10") are internal
+#                  SignalType codes read from the track file, not values a test
+#                  author types. Test authors select a signal by "name"; the
+#                  wrapper looks up its type automatically.
+# Internal value : the category name string used only for internal comparisons
+#                  inside set_signal().
+signal_types = {
+    '1': 'absoluteinterlocking',        # Absolute interlocking signal.
+    '2': 'absolutenoninterlocking',     # Absolute (non-interlocking) signal.
+    '3': 'intermediatestopandproceed',  # Intermediate stop-and-proceed signal.
+    '4': 'intermediaterestricted',      # Intermediate restricted signal.
+    '5': 'distantoperative',            # Distant signal, operative.
+    '6': 'distantinoperative',          # Distant signal, inoperative.
+    # Track-circuit signal. set_signal() treats types 7/8/9 as the track-circuit
+    # family: position "hazard undetected"/"track integrity verified" -> hdNORMAL,
+    # "hazard detected"/"track integrity unverified" -> hdDETECTED.
+    '7': 'trackcircuit',
+    '8': 'ostrackcircuit',              # OS (on-station) track-circuit signal (track-circuit family).
+    '9': 'cleartonextinterlocking',     # Clear-to-next-interlocking signal (track-circuit family).
+    '10': 'stationstop'                 # Station-stop signal.
+}
+
+# --- comm_state -------------------------------------------------------------
+# Domain concept : WIU / communication-point communication link state.
+#                  Protocol translations from a user-facing word to the internal
+#                  "cs*" communication-state token.
+# Applies to     : a WIU / CP (Wayside Interface Unit) communication link, not a
+#                  signal or switch aspect.
+# Value kind     : commands sent to force a WIU's comm link state.
+# Consumed by    : Wayside.set_comm_state() via params['comm']. The mapped value
+#                  is placed in the WAYSIDE::set_wayside_comm_state(sub_id,cp_id,
+#                  <value>) command. The KEYS are also the allowed-value list for
+#                  set_comm_state validation (comm = [*WaysideLibConstant.comm_state]).
+# User supplies  : one lowercase key ("disable" or "enable") in params['comm'].
+# Internal value : the "cs*" token; internal only, not entered by test authors.
+comm_state = {
+    # Force the WIU/CP OUT of communication (simulate loss of comm).
+    # User supplies "disable"; wrapper token "csOUT_OF_COMM".
+    'disable': 'csOUT_OF_COMM',
+    # Force the WIU/CP INTO communication (restore comm). User supplies
+    # "enable" -> "csIN_COMM".
+    'enable': 'csIN_COMM',
+    # Fallback entry (capital "D"): communication not available.
+    # REVIEW: set_comm_state only accepts "disable"/"enable" from users (validated
+    # against the keys), so the trigger for the "Default" -> "csNOT_AVAILABLE"
+    # entry is not exercised by the current public method. Keep the capital "D"
+    # and the value as literals; their runtime trigger is unverified.
+    'Default': 'csNOT_AVAILABLE'
+}

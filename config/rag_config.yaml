@@ -25,7 +25,7 @@ track_data_top_k: 4          # track-feature chunks added on top of top_k
 # python_apis, track_data and parameter_config are BM25-only here (never
 # embedded — see config.yaml), so these are keyword-match counts, not
 # fused-ranking ones.
-static_api_top_k: 4          # python_apis method/class chunks per request
+static_api_top_k: 8          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-feature chunks per request (still
                               # filtered to the requirement's subdivisions)
 static_parameter_top_k: 4    # TBC/CFG/THE parameter records per request

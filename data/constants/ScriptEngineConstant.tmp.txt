@@ -1,0 +1,543 @@
+# -*- coding: UTF-8 -*-
+"""Information contained in this document is proprietary and confidential to,
+and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland.
+
+This file contains constants used by the Script Engine Interface (see
+``ScriptEngine.py``).  It defines the simulators that the framework can open,
+manage, and connect to over the Script Engine SCM (telnet) channel.
+
+------------------------------------------------------------------------------
+How to pick the correct simulator key
+------------------------------------------------------------------------------
+A test that needs a simulator which is *not* already part of the running test
+setup enables it from a test script with::
+
+    run_test.enable_optional_sim("UP_OFFICE")           # single sim
+    run_test.enable_optional_sim(["NS_OFFICE", "CHM"])  # several sims
+
+``enable_optional_sim()`` forwards the value(s) to
+``ProjectVariables.set_optional_sim()``, which only accepts the *keys* defined
+in this file (offices, IVOCs, and the explicit optional list in
+``set_optional_sim``).  The value passed is therefore always a **key** from
+``sim_process_name`` below (for example ``"UP_OFFICE"``), never a process name
+such as ``"UP_OfficeSimulator"`` and never a port number.
+
+To answer "which key do I pass?":
+
+1.  Find the simulator / external system named in the requirement in the
+    grouped comments below (office, Wayside, EOT, ITO, KSD, etc.).
+2.  Use the dictionary **key** shown for that simulator.  Keys are
+    case-insensitive at the ``enable_optional_sim`` boundary (they are
+    upper-cased), but the canonical spelling is what appears here.
+3.  Keys are **not** interchangeable across railroads/offices or across
+    client/server halves of a feature.  When a feature spans several
+    processes (client + server, EMS + ITO, message + service, etc.) every
+    required key must be enabled together - the grouped notes call this out.
+
+------------------------------------------------------------------------------
+The three structures and how they relate
+------------------------------------------------------------------------------
+``all_sims``
+    A flat list of every simulator *process / application name* the framework
+    is aware of.  These are executable/window names, not test-facing keys.
+    It is a lookup/reference set of "recognized simulators"; test scripts do
+    not pass these strings to ``enable_optional_sim()``.
+
+``sim_process_name``
+    Maps the **test-script-facing key** (e.g. ``"UP_OFFICE"``) to the
+    **process / application name** that Script Engine opens, kills, restarts,
+    and checks for (e.g. ``"UP_OfficeSimulator"``).  ``ScriptEngine.start_app``,
+    ``kill_app``, and ``restart_app`` resolve the key through this dict, and
+    ``is_sim_open`` checks the resulting process name.  This is the
+    authoritative list of valid keys.  The ``"CROSSING"`` entry is special: its
+    value is a dict keyed by SCAC that maps to a *list* of crossing process
+    names.
+
+``sim_scm_port``
+    Maps the **same key** to the TCP port Script Engine uses to open an SCM
+    connection to that simulator (``connect_scm`` reads it via
+    ``add_module(<key>, "", <port>)``).  A key only appears here if the
+    simulator supports an SCM connection.  A value of ``0`` means the simulator
+    is started/managed but is not connected over SCM (e.g. ``CDU``, ``OBCDDS``,
+    ``EMM``).  A key present in ``sim_process_name`` but absent from
+    ``sim_scm_port`` is opened/managed only and never SCM-connected.
+
+Verified against ``ScriptEngine.py`` (``connect_scm``/``start_app``/``kill_app``)
+and ``Run_Test.py`` / ``ProjectVariables.set_optional_sim`` before writing.
+
+:Author: dmmclean@wabtec.com; dleon@wabtec.com
+:group: private
+"""
+
+# all_sims: reference list of every recognized simulator PROCESS / APPLICATION
+# name (executable or window title), NOT the test-facing keys.  Do not pass
+# these strings to enable_optional_sim(); pass the keys from sim_process_name.
+# Used as a "known simulators" set; the test-facing key -> process-name mapping
+# lives in sim_process_name below.
+all_sims = ['Vital-DebugClient-Slice1',
+            'Vital-DebugClient-Slice2',
+            'Vital-DebugClient-Slice3',
+            'Vital-DebugClient-Slice4',
+            'UP_OfficeSimulator',
+            'NS_OfficeSimulator',
+            'CSXT_OfficeSimulator',
+            'BNSF_OfficeSimulator',
+            'CN_OfficeSimulator',
+            'FEC_OfficeSimulator',
+            'TRRA_OfficeSimulator',
+            'METX_OfficeSimulator',
+            'NICD_OfficeSimulator',
+            'RTDC_OfficeSimulator',
+            'UP2_OfficeSimulator',
+            'UP20_OfficeSimulator',
+            'NS30_OfficeSimulator',
+            'BNSF40_OfficeSimulator',
+            'MRS_OfficeSimulator',
+            'ARR_OfficeSimulator',
+            'BNSF50_OfficeSimulator',
+            'BNSF60_OfficeSimulator',
+            'BNSF70_OfficeSimulator',
+            'CFB_OfficeSimulator',
+            'RUMO_OfficeSimulator',
+            'KCT_OfficeSimulator',
+            'Vital-IocBridge',
+            'Vital-WaysideClient',
+            'Vital-WaysideServer',
+            'Vital-LocoSimulator',
+            'EMCSimulator',
+            'EMC_IV4Simulator',
+            'EMC_IV5Simulator',
+            'EMC_IV6Simulator',
+            'ChmRecorder',
+            'CHMSimulator',
+            'EMMSimulator',
+            'PTCDataMonitor',
+            'emp_filter',
+            'run_emp_router',
+            'Vital-ScriptEngine',
+            'CDU',
+            'CDU_TRIPLEX',
+            'CDU_TRIPLEX2',
+            'OBCDDS',
+            'EOSUI',
+            'EOTUI',
+            'EOTSimulator',
+            'EOTService',
+            'Vital-DisplayServer-triplex',
+            'Vital-DisplayServer-triplex-MRS',
+            'Vital-DisplayServer-V3-triplex',
+            'Vital-DisplayServer-V3-triplex-CDU2',
+            'Vital-DisplayServer-CDU.exe',
+            'Vital-DisplayServer-ACA',
+            'Vital-DisplayServer-V3-ACA',
+            'Vital-DisplayServer-Slice1',
+            'Vital-DisplayServer-Slice2',
+            'Vital-DisplayServer-Slice3',
+            'Vital-DisplayServer-V3-Slice1',
+            'Vital-DisplayServer-V3-Slice2',
+            'Vital-DisplayServer-V3-Slice3',
+            'MDMSimulator',
+            'WirelessCrossing-38th_and_Blake_Station',
+            'WirelessCrossing-40th_and_Aiport_Station',
+            'WirelessCrossing-61st_and_Pena_Station',
+            'WirelessCrossing-Central_Park_Station',
+            'WirelessCrossing-Chambers_Road',
+            'WirelessCrossing-Clayton_st',
+            'WirelessCrossing-Colorado',
+            'WirelessCrossing-Dahlia_Street',
+            'WirelessCrossing-Havana_Street',
+            'WirelessCrossing-Holly_Street',
+            'WirelessCrossing-Monaco_Parkway',
+            'WirelessCrossing-NB_Quebec_Parkway',
+            'WirelessCrossing-Peoria_Station',
+            'WirelessCrossing-Sable_Boulevard',
+            'WirelessCrossing-SB_Quebec_Parkway',
+            'WirelessCrossing-Steele_St',
+            'WirelessCrossing-Ulser_Street',
+            'WirelessCrossing-York_and_Josephine_Street',
+            'WirelessCrossing-Park_Avenue',
+            'WirelessCrossing-Donald_Ross_Road',
+            'WirelessCrossing-S_E_ST',
+            'WirelessCrossing-S_Tippecanoe_Ave'
+            'ARR_IVOCSimulator',
+            'CFB_IVOCSimulator',
+            'RUMO_IVOCSimulator',
+            'HOT_DualLinkSimulator',
+            'ITOOB_EMS2ITO_EMSSimulator',
+            'ITOOB_EMS2ITO_ITOSimulator',
+            'ITOOB_RCS2ITO_ITOSimulator',
+            'ITOOB_RCS2ITO_RCSSimulator',
+            'M9155_EMS2ITO_EMSSimulator',
+            'M9155_EMS_ITO_ITOSimulator',
+            'M9155_EMS_LCCM_EMSSimulator',
+            'M9155_EMS_LCCM_LCCMSimulator',
+            'M9155_ITO_LCCM_ITOSimulator',
+            'M9155_ITO2LCCM_LCCMSimulator',
+            'M9155_RCS2ITO_RCSSimulator',
+            'M9155_RCS_ITO_ITOSimulator',
+            'ITO_UP_OfficeSimulator',
+            'ITOOB_ICU2ITO_ICUSimulator',
+            'KSD_ClientSimulator',
+            'KSD_ServerSimulator',
+            'KSMSimulator',
+            'RRSSimulator',
+            'DDConverter'
+            ]
+"""all_sim list all possible sims created"""
+
+# sim_process_name: THE authoritative list of valid test-facing simulator keys.
+# key (what you pass to enable_optional_sim / set_optional_sim) -> process name
+# that Script Engine opens, kills, restarts and checks for.  See the module
+# docstring for how to choose a key.  Group headers below describe each family
+# and its selection rule.  Order is load-bearing for some callers - do not
+# reorder.
+sim_process_name = {
+                    # -- Vital Debug Client slices -----------------------------
+                    # Debug-client instances for redundant "slices" (channels)
+                    # of the vital onboard.  SLICE1-3 are part of the normal
+                    # project setup; SLICE4 is added only for specific projects
+                    # (e.g. BAM/EOT, ITO).  Normally already running - rarely
+                    # passed to enable_optional_sim(). Pick the slice number the
+                    # test targets: "SLICE1".."SLICE4".
+                    "SLICE1": 'Vital-DebugClient-Slice1',
+                    "SLICE2": 'Vital-DebugClient-Slice2',
+                    "SLICE3": 'Vital-DebugClient-Slice3',
+                    "SLICE4": 'Vital-DebugClient-Slice4',
+                    # -- Railroad / office simulators --------------------------
+                    # Each key is one railroad's back-office (BOS) simulator.
+                    # Enable the office the test must exchange messages with;
+                    # keys are NOT interchangeable between railroads.  Numbered
+                    # variants (UP2, UP20, NS30, BNSF40/50/60/70) are additional
+                    # office instances of the same railroad used when a test
+                    # needs a second/independent office. The default office for
+                    # a run comes from the project; pass an office key here only
+                    # when a test needs a non-default or additional office, e.g.
+                    # run_test.enable_optional_sim(["NS_OFFICE", "BNSF_OFFICE"]).
+                    "UP_OFFICE": 'UP_OfficeSimulator',       # Union Pacific office
+                    "NS_OFFICE": 'NS_OfficeSimulator',       # Norfolk Southern office
+                    "CSXT_OFFICE": 'CSXT_OfficeSimulator',   # CSX Transportation office
+                    "BNSF_OFFICE": 'BNSF_OfficeSimulator',   # BNSF Railway office
+                    "CN_OFFICE": 'CN_OfficeSimulator',       # Canadian National office
+                    "FEC_OFFICE": 'FEC_OfficeSimulator',     # Florida East Coast office
+                    "TRRA_OFFICE": 'TRRA_OfficeSimulator',   # Terminal RR Assn of St. Louis office
+                    "METX_OFFICE": 'METX_OfficeSimulator',   # Metra (METX) office
+                    "RTDC_OFFICE": 'RTDC_OfficeSimulator',   # Denver RTD commuter office
+                    "UP2_OFFICE": 'UP2_OfficeSimulator',     # Union Pacific 2nd office instance
+                    "UP20_OFFICE": 'UP20_OfficeSimulator',   # Union Pacific additional office instance
+                    "NS30_OFFICE": 'NS30_OfficeSimulator',   # Norfolk Southern additional office instance
+                    "BNSF40_OFFICE": 'BNSF40_OfficeSimulator',  # BNSF additional office instance
+                    "MRS_OFFICE": 'MRS_OfficeSimulator',     # MRS Logistica (Brazil) office
+                    "ARR_OFFICE": 'ARR_OfficeSimulator',     # Alaska Railroad office (WCR/IVOC railroad)
+                    "BNSF50_OFFICE": 'BNSF50_OfficeSimulator',  # BNSF additional office instance
+                    "BNSF60_OFFICE": 'BNSF60_OfficeSimulator',  # BNSF additional office instance
+                    "BNSF70_OFFICE": 'BNSF70_OfficeSimulator',  # BNSF additional office instance
+                    "CFB_OFFICE": 'CFB_OfficeSimulator',     # Ferrovia Centro-Atlantica (CFB, Brazil) office (IVOC railroad)
+                    "RUMO_OFFICE": 'RUMO_OfficeSimulator',   # Rumo Logistica (Brazil) office (IVOC railroad)
+                    "ACEX_OFFICE": 'ACEX_OfficeSimulator',   # Altamont Corridor Express (ACE) office
+                    "AMTK_OFFICE": 'AMTK_OfficeSimulator',   # Amtrak office
+                    "GNWR_OFFICE": 'GNWR_OfficeSimulator',   # Genesee & Wyoming office
+                    "CFRC_OFFICE": 'CFRC_OfficeSimulator',   # Central Florida Rail Corridor (SunRail) office
+                    "CLXX_OFFICE": 'CLXX_OfficeSimulator',   # CLXX railroad office
+                    "CPRS_OFFICE": 'CPRS_OfficeSimulator',   # Canadian Pacific / CPKC office
+                    "CSAO_OFFICE": 'CSAO_OfficeSimulator',   # Conrail Shared Assets Operations office
+                    "NICD_OFFICE": 'NICD_OfficeSimulator',   # Northern Indiana Commuter (South Shore) office
+                    "FWWR_OFFICE": 'FWWR_OfficeSimulator',   # Fort Worth & Western office
+                    "SCAX_OFFICE": 'SCAX_OfficeSimulator',   # Metrolink (SCAX) office (wireless-crossing railroad)
+                    "PJPB_OFFICE": 'PJPB_OfficeSimulator',   # Tri-Rail / South Florida (PJPB) office
+                    "KCT_OFFICE": 'KCT_OfficeSimulator',     # Kansas City Terminal office
+                    # -- IocBridge --------------------------------------------
+                    # IOC bridge process linking the vital onboard to office
+                    # comms.  Part of the normal project setup; pass "IOC" only
+                    # if a test must explicitly (re)start the bridge.
+                    "IOC": 'Vital-IocBridge',
+                    # -- Wayside client / server ------------------------------
+                    # "WAYSIDE" is the Wayside CLIENT; "WAYSIDE_SRV" is the
+                    # Wayside SERVER.  Both are part of the normal project setup.
+                    # A test that drives wayside signal/track messages needs the
+                    # client ("WAYSIDE"); enable the server ("WAYSIDE_SRV") too
+                    # only when the wrapper library it uses requires the server
+                    # side.  They are distinct keys - do not substitute one for
+                    # the other.
+                    "WAYSIDE": 'Vital-WaysideClient',
+                    "WAYSIDE_SRV": 'Vital-WaysideServer',
+                    # -- Locomotive simulator ---------------------------------
+                    # Onboard locomotive simulator (speed, movement, track
+                    # position).  Part of the normal project setup; pass "LOCO"
+                    # only to explicitly (re)start it.
+                    "LOCO": 'Vital-LocoSimulator',
+                    # -- EMC (End-of-train / Head-of-train Management Computer)
+                    # variants ------------------------------------------------
+                    # EMC message simulator.  "EMC" is the base/IV3 simulator;
+                    # "EMC_IV4"/"EMC_IV5"/"EMC_IV6" are the IV4/IV5/IV6 hardware
+                    # variants (all share SCM port 24680, so run one at a time).
+                    # Optional - enable the exact variant the test targets, e.g.
+                    # run_test.enable_optional_sim("EMC_IV5").
+                    "EMC": 'EMCSimulator',
+                    "EMC_IV4": 'EMC_IV4Simulator',
+                    "EMC_IV5": 'EMC_IV5Simulator',
+                    "EMC_IV6": 'EMC_IV6Simulator',
+                    # -- CHM (Crash-Hardened Memory / event recorder) ---------
+                    # "CHM" is the current CHM recorder; "CHM_LEGACY" is the
+                    # older CHM simulator (different exe path and SCM port).
+                    # Optional - enable "CHM" for current builds, "CHM_LEGACY"
+                    # only for legacy-recorder tests.
+                    "CHM": 'ChmRecorder',
+                    "CHM_LEGACY": 'CHMSimulator',
+                    # -- EMM (Event Message Monitor) --------------------------
+                    # Monitor-only tool; started/managed but not SCM-connected
+                    # (no usable port).  Optional key: "EMM".
+                    "EMM": 'EMMSimulator',
+                    # -- PTC data monitor -------------------------------------
+                    # PTC message/data monitor.  Part of the normal project
+                    # setup for most streams; pass "PTC" to (re)start it.
+                    "PTC": 'PTCDataMonitor',
+                    # -- EMP message routing (filter / router) ----------------
+                    # EMP (Edge Message Protocol) message plumbing.
+                    # "EMP_FILTER" and "EMP_FILTER_EOT" both run the emp_filter
+                    # process but from different paths/configs; use the _EOT
+                    # variant for EOT/HOT streams.  Started/managed only (not
+                    # SCM-connected).  Enable the variant matching the stream.
+                    "EMP_FILTER": 'emp_filter',
+                    "EMP_FILTER_EOT": 'emp_filter',
+                    # -- EOT / HOT (End-of-Train / Head-of-Train) components ---
+                    # Family of processes for EOT/HOT device testing.  A single
+                    # EOT/HOT feature usually needs several of these together;
+                    # match the keys to the components your wrapper drives.
+                    #   EOT_SERVICE -> EOSUI    : EOT service user interface
+                    #   EOT         -> EOTUI    : EOT device user interface
+                    #   HOTCCUI     -> HOTCCUI  : HOT Comm Controller UI
+                    #   PTCUI       -> PTCUI    : PTC user interface
+                    #   EOTService  -> EOTService : EOT background service
+                    #   EOTMessage  -> EOTSimulator : EOT message generator
+                    #   HOTCC_Simulator -> HOTCCSimulator : HOT Comm Controller sim
+                    # Enable the exact component(s) the test exercises (e.g. an
+                    # EOT message test typically needs "EOTMessage" plus
+                    # "EOTService").
+                    "EOT_SERVICE": 'EOSUI',
+                    "EOT": 'EOTUI',
+                    "HOTCCUI": 'HOTCCUI',
+                    "PTCUI": 'PTCUI',
+                    "EOTService": 'EOTService',
+                    "EOTMessage": 'EOTSimulator',
+                    "HOTCC_Simulator": 'HOTCCSimulator',
+                    # -- EMP router (batch/router process) --------------------
+                    # "EMP_ROUTER" and "EMP_ROUTER_HOT" both launch the
+                    # run_emp_router process (different working folder); use the
+                    # _HOT variant for HOT dual-link streams.
+                    "EMP_ROUTER": 'run_emp_router',
+                    "EMP_ROUTER_HOT": 'run_emp_router',
+                    # -- Script Engine itself ---------------------------------
+                    # The Script Engine host process.  Special-cased in
+                    # ScriptEngine.py (never SCM-connected like a sim); not an
+                    # optional sim.  Present so the framework can (re)start it.
+                    "ScriptEngine": 'Vital-ScriptEngine',
+                    # -- CDU / cab display units ------------------------------
+                    # "CDU"/"OBCDDS" are cab display processes that are managed
+                    # but not SCM-connected (port 0).  "CDU" is the single CDU;
+                    # "OBCDDS" is the onboard CDU data distribution service.
+                    "CDU": 'CDU',
+                    "OBCDDS": 'OBCDDS',
+                    # -- Display servers (CDU display-server variants) ---------
+                    # Vital display-server instances.  The concrete process name
+                    # for these can be overridden at runtime in start_app()
+                    # based on project/onboard version.
+                    #   CDU_TRIPLEX  : triplex display server (V3)
+                    #   CDU_TRIPLEX2 : second triplex display server (optional)
+                    #   CDU_ACA      : ACA display server (V3)
+                    # "CDU_TRIPLEX" is part of the normal project setup;
+                    # "CDU_TRIPLEX2" is optional (enable when a 2nd CDU display
+                    # is required).
+                    "CDU_TRIPLEX": 'Vital-DisplayServer-V3-triplex',
+                    "CDU_TRIPLEX2": 'Vital-DisplayServer-V3-triplex-CDU2',
+                    "CDU_ACA": 'Vital-DisplayServer-V3-ACA',
+                    # -- Display slices ---------------------------------------
+                    # Per-slice display-server instances.  DISPLAY1/2/3 are the
+                    # standard display slices; DISPLAY1_V3/2_V3/3_V3 are the V3
+                    # display-server equivalents.  Pick the slice (and V3 suffix
+                    # when the build uses the V3 display server) the test targets.
+                    'DISPLAY1': 'Vital-DisplayServer-Slice1',
+                    'DISPLAY2': 'Vital-DisplayServer-Slice2',
+                    'DISPLAY3': 'Vital-DisplayServer-Slice3',
+                    'DISPLAY1_V3': 'Vital-DisplayServer-V3-Slice1',
+                    'DISPLAY2_V3': 'Vital-DisplayServer-V3-Slice2',
+                    'DISPLAY3_V3': 'Vital-DisplayServer-V3-Slice3',
+                    # -- MDM (Mobile Data Manager) server ---------------------
+                    # MDM server simulator.  Optional key: "MDM".
+                    'MDM': 'MDMSimulator',
+                    # -- Wireless crossing simulators -------------------------
+                    # "CROSSING" is special: its value is NOT a process name but
+                    # a dict keyed by railroad SCAC ('FEC', 'RTDC', 'SCAX') that
+                    # maps to the LIST of wireless-crossing processes for that
+                    # railroad.  start_app/kill_app select the list for the
+                    # active SCAC (pv.default_scac) and open/close every crossing
+                    # in it.  You pass the key "CROSSING"; which crossings launch
+                    # is driven by the current SCAC, not by choosing a sub-key.
+                    'CROSSING': {
+                        'FEC': ['WirelessCrossing-Park_Avenue', 'WirelessCrossing-Donald_Ross_Road'],
+                        'RTDC': ['WirelessCrossing-38th_and_Blake_Station', 'WirelessCrossing-40th_and_Aiport_Station',
+                                 'WirelessCrossing-61st_and_Pena_Station', 'WirelessCrossing-Central_Park_Station',
+                                 'WirelessCrossing-Chambers_Road', 'WirelessCrossing-Clayton_st',
+                                 'WirelessCrossing-Colorado', 'WirelessCrossing-Dahlia_Street',
+                                 'WirelessCrossing-Havana_Street', 'WirelessCrossing-Holly_Street',
+                                 'WirelessCrossing-Monaco_Parkway', 'WirelessCrossing-NB_Quebec_Parkway',
+                                 'WirelessCrossing-Peoria_Station', 'WirelessCrossing-Sable_Boulevard',
+                                 'WirelessCrossing-SB_Quebec_Parkway', 'WirelessCrossing-Steele_St',
+                                 'WirelessCrossing-Ulser_Street', 'WirelessCrossing-York_and_Josephine_Street'],
+                        'SCAX': ['WirelessCrossing-S_E_ST', 'WirelessCrossing-S_Tippecanoe_Ave']},
+                    # -- IVOC simulators (Interoperable Vital Onboard Computer)
+                    # Railroad-specific IVOC office simulators (WCR/protect
+                    # railroads).  "ARR_IVOC"/"CFB_IVOC"/"RUMO_IVOC" pair with
+                    # the matching *_OFFICE key of the same railroad; e.g. an ARR
+                    # test starts both "ARR_OFFICE" and "ARR_IVOC".  Tests may
+                    # also pass the generic "IVOC" key: set_optional_sim()/
+                    # start_app() expand "IVOC" to "<default_scac>_IVOC" using
+                    # the active railroad.  Pick the railroad's IVOC key.
+                    'ARR_IVOC': 'ARR_IVOCSimulator',   # Alaska Railroad IVOC
+                    'CFB_IVOC': 'CFB_IVOCSimulator',   # CFB (Brazil) IVOC
+                    'RUMO_IVOC': 'RUMO_IVOCSimulator', # Rumo (Brazil) IVOC
+                    # -- HOT dual-link simulator ------------------------------
+                    # Head-of-Train dual-link radio simulator.  Optional key:
+                    # "HOT_DUALLINKSIMULATOR".  Enabling it makes StartupLib kill
+                    # the plain-EOT processes (EOTMessage/EOTService/
+                    # EMP_FILTER_EOT), so use it for HOT (not plain EOT) streams.
+                    'HOT_DUALLINKSIMULATOR': 'HOT_DualLinkSimulator',
+                    # -- ITO / EMS / RCS / LCCM / ICU interface simulators -----
+                    # Interface simulators for the ITO (Interoperable Train
+                    # Occupancy) solution.  Each key names an interface as
+                    # <config>_<endpointA>2<endpointB>_<thisEndpoint>, and each
+                    # side of a link is its OWN process/key.  A link test needs
+                    # BOTH endpoints enabled together, e.g. an EMS<->ITO test
+                    # needs "M9155_EMS2ITO_EMS" AND "M9155_EMS2ITO_ITO".
+                    #   ITOOB_* : ITO onboard-side interface variants
+                    #   M9155_* : M9155 gateway interface variants
+                    #   EMS  = Energy Management System endpoint
+                    #   RCS  = Remote Control System endpoint
+                    #   LCCM = Locomotive Control & Comm Module endpoint
+                    #   ICU  = Interface Control Unit endpoint
+                    #   ITO  = ITO endpoint
+                    # Enable the exact endpoint keys that make up the link under
+                    # test (see ProjectVariables ITO_Executive default_sims for a
+                    # full working set).
+                    'ITOOB_EMS2ITO_EMS': 'ITOOB_EMS2ITO_EMSSimulator',
+                    'ITOOB_EMS2ITO_ITO': 'ITOOB_EMS2ITO_ITOSimulator',
+                    'ITOOB_RCS2ITO_ITO': 'ITOOB_RCS2ITO_ITOSimulator',
+                    'ITOOB_RCS2ITO_RCS': 'ITOOB_RCS2ITO_RCSSimulator',
+                    'M9155_EMS2ITO_EMS': 'M9155_EMS2ITO_EMSSimulator',
+                    'M9155_EMS2ITO_ITO': 'M9155_EMS2ITO_ITOSimulator',
+                    'M9155_EMS2LCCM_EMS': 'M9155_EMS2LCCM_EMSSimulator',
+                    'M9155_EMS2LCCM_LCCM': 'M9155_EMS2LCCM_LCCMSimulator',
+                    'M9155_ITO2LCCM_ITO': 'M9155_ITO2LCCM_ITOSimulator',
+                    'M9155_ITO2LCCM_LCCM': 'M9155_ITO2LCCM_LCCMSimulator',
+                    'M9155_RCS2ITO_ITO': 'M9155_RCS2ITO_ITOSimulator',
+                    'M9155_RCS2ITO_RCS': 'M9155_RCS2ITO_RCSSimulator',
+                    # ITO back-office (BOS) simulator for the UP ITO solution.
+                    # Note: unlike railroad offices this one is NOT treated as an
+                    # "OFFICE" in start_app path logic.  Key: "ITO_UP_BOS".
+                    'ITO_UP_BOS': 'ITO_UP_OfficeSimulator',
+                    # ICU<->ITO onboard interface simulator. Key:
+                    # "ITOOB_ICU2ITO_ICU" (pair with the ITO endpoint as needed).
+                    'ITOOB_ICU2ITO_ICU': 'ITOOB_ICU2ITO_ICUSimulator',
+                    # -- KSD client / server ----------------------------------
+                    # KSD interface simulators.  "KSD_CLIENT" is the client side
+                    # (note: it is intentionally NOT SCM-connected - see
+                    # connect_scm's connection_ignore list) and "KSD_SERVER" is
+                    # the server side.  A KSD test typically enables both keys
+                    # together.  "KSM" is the related KSM simulator.
+                    'KSD_CLIENT': 'KSD_ClientSimulator',
+                    'KSD_SERVER': 'KSD_ServerSimulator',
+                    'KSM': 'KSMSimulator',
+                    # -- RRS --------------------------------------------------
+                    # RRS interface simulator.  Optional key: "RRS".
+                    'RRS': 'RRSSimulator',
+                    # -- Supporting tools -------------------------------------
+                    # Data-dictionary converter helper process. Key: "DDConverter".
+                    "DDConverter": 'DDConverter'
+                    }
+"""sim_process_name: test-facing simulator key -> managed process/application
+name. This is the authoritative set of valid keys for enable_optional_sim().
+"""
+
+# sim_scm_port: test-facing simulator key -> TCP port Script Engine uses to
+# open an SCM connection to that simulator (connect_scm issues
+# add_module(<key>, "", <port>)).  A key appears here ONLY if the simulator
+# supports an SCM connection; a key in sim_process_name but not here is
+# opened/managed but never SCM-connected.  Port 0 means "managed, not
+# connected" (e.g. CDU, OBCDDS, EMM).  A few keys here have no sim_process_name
+# entry (e.g. LOCO_01, IVOC, VLI_OFFICE, AML_OFFICE, DISPLAY1) - they reserve a
+# port for a runtime-formed or alias sim name and are not passed directly to
+# enable_optional_sim().  Do NOT change these ports: they must match the port
+# each simulator listens on.
+sim_scm_port = {"SLICE1": 22110,
+                "SLICE2": 22115,
+                "SLICE3": 22120,
+                "SLICE4": 22125,
+                "UP_OFFICE": 12345,
+                "NS_OFFICE": 12346,
+                "BNSF_OFFICE": 12347,
+                "CSXT_OFFICE": 12355,
+                "CN_OFFICE": 12359,
+                "FEC_OFFICE": 11223,
+                "TRRA_OFFICE": 12362,
+                "METX_OFFICE": 12312,
+                "NICD_OFFICE": 12313,
+                "RTDC_OFFICE": 12348,
+                "PJPB_OFFICE": 12361,
+                "UP2_OFFICE": 12350,
+                "UP20_OFFICE": 12351,
+                "NS30_OFFICE": 12352,
+                "BNSF40_OFFICE": 12353,
+                "MRS_OFFICE": 12349,
+                "ARR_OFFICE": 12354,
+                "BNSF50_OFFICE": 12356,
+                "BNSF60_OFFICE": 12357,
+                "BNSF70_OFFICE": 12358,
+                "AMTK_OFFICE": 12363,
+                "CFB_OFFICE": 12364,
+                "RUMO_OFFICE": 12365,
+                "KCT_OFFICE": 12346,
+                "IOC": 50505,
+                "WAYSIDE": 11500,
+                "WAYSIDE_SRV": 11501,
+                "LOCO": 12000,
+                "LOCO_01": 12001,
+                "EMC": 24680,
+                "EMC_IV4": 24680,
+                "EMC_IV5": 24680,
+                "EMC_IV6": 24680,
+                "CHM": 11410,
+                "CHM_LEGACY": 13579,
+                "EMM": 0,
+                "PTC": 54100,
+                "CDU": 0,
+                "OBCDDS": 0,
+                "CDU_TRIPLEX": 50104,
+                "CDU_TRIPLEX2": 50105,
+                "CDU_ACA": 50100,
+                "DISPLAY1": 22111,
+                'MDM': 20406,
+                'IVOC': 12360,
+                'ARR_IVOC': 12360,
+                'CFB_IVOC': 12360,
+                'RUMO_IVOC': 12360,
+                "VLI_OFFICE": 12367,
+                "AML_OFFICE": 12366,
+                'ITOOB_EMS2ITO_EMS': 3781,
+                'ITOOB_EMS2ITO_ITO': 3780,
+                'ITOOB_RCS2ITO_ITO': 3880,
+                'ITOOB_RCS2ITO_RCS': 3881,
+                'M9155_EMS2ITO_EMS': 3697,
+                'M9155_EMS2ITO_ITO': 3698,
+                'M9155_EMS2LCCM_EMS': 3691,
+                'M9155_EMS2LCCM_LCCM': 3690,
+                'M9155_ITO2LCCM_ITO': 3699,
+                'M9155_ITO2LCCM_LCCM': 3692,
+                'M9155_RCS2ITO_ITO': 3693,
+                'M9155_RCS2ITO_RCS': 3694,
+                'ITO_UP_BOS': 15000,
+                'ITOOB_ICU2ITO_ICU': 3883,
+                'KSD_CLIENT': 3983,
+                'KSD_SERVER': 3984,
+                'KSM': 3982,
+                'RRS': 3980,
+                }
+"""sim_scm_port"""

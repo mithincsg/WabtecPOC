@@ -10,6 +10,7 @@ from .llm_client import LLMClient
 from .prompts import PromptLibrary
 from .requirement_parser import parse_requirement
 from .keyword_index import KeywordHit
+from .reference_scripts import ReferenceScriptProvider
 from .retriever import HybridRetriever, RetrievedChunk
 from .schema import TEST_CASES_JSON_SCHEMA, TestCase, parse_test_cases
 from .static_context import StaticContextProvider
@@ -205,6 +206,7 @@ class TestScriptGenerator:
         static_api_top_k: int = 4,
         static_track_top_k: int = 4,
         static_parameter_top_k: int = 6,
+        reference_scripts: ReferenceScriptProvider | None = None,
     ):
         self.retriever = retriever
         self.llm_client = llm_client
@@ -216,6 +218,7 @@ class TestScriptGenerator:
         self.static_api_top_k = static_api_top_k
         self.static_track_top_k = static_track_top_k
         self.static_parameter_top_k = static_parameter_top_k
+        self.reference_scripts = reference_scripts
 
     def generate(
         self,
@@ -272,6 +275,17 @@ class TestScriptGenerator:
             self.retriever.retrieve(query, requirement_id=parsed.requirement_id).context,
         )
 
+        # A worked example of how a real, approved script sequences its
+        # calls - the choreography no API stub can show in isolation. Below
+        # a relevance floor this returns nothing rather than forcing an
+        # unrelated example into the prompt.
+        reference_match = (
+            self.reference_scripts.best_match(query, parsed.requirement_id or "")
+            if self.reference_scripts
+            else None
+        )
+        reference_script = reference_match[1] if reference_match else ""
+
         prompt = self.prompts.test_script
         user_prompt = prompt.render_user(
             requirement_id=parsed.requirement_id or "(not stated)",
@@ -280,13 +294,16 @@ class TestScriptGenerator:
             api_context=api_context or "(No API definitions were retrieved.)",
             track_context=track_context or "(No track data was retrieved.)",
             parameter_context=parameter_context or "(No parameter/data-dictionary context was retrieved.)",
+            reference_script=reference_script or "(No reference script matched this requirement.)",
         )
         logger.info(
-            "Context assembled: api=%d chars, track=%d chars, parameter/kb=%d chars; "
-            "sending %d-char prompt to the script LLM call",
+            "Context assembled: api=%d chars, track=%d chars, parameter/kb=%d chars, "
+            "reference_script=%d chars (matched %s); sending %d-char prompt to the script LLM call",
             len(api_context),
             len(track_context),
             len(parameter_context),
+            len(reference_script),
+            reference_match[0] if reference_match else "none",
             len(user_prompt),
         )
 

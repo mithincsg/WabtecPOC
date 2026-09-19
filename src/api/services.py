@@ -17,6 +17,7 @@ from rag.generator import TestCaseGenerator, TestScriptGenerator
 from rag.keyword_index import KeywordIndex
 from rag.llm_client import OllamaClient
 from rag.prompts import PromptLibrary
+from rag.reference_scripts import ReferenceScriptProvider
 from rag.retriever import HybridRetriever
 from rag.static_context import StaticContextProvider
 
@@ -73,6 +74,7 @@ class Services:
         self._keyword_index: KeywordIndex | None = None
         self._retriever: HybridRetriever | None = None
         self._static_context: StaticContextProvider | None = None
+        self._reference_scripts: ReferenceScriptProvider | None = None
         self._test_case_generator: TestCaseGenerator | None = None
         self._script_generator: TestScriptGenerator | None = None
 
@@ -140,6 +142,16 @@ class Services:
         return self._static_context
 
     @property
+    def reference_scripts(self) -> ReferenceScriptProvider:
+        if self._reference_scripts is None:
+            with self._lock:
+                if self._reference_scripts is None:
+                    self._reference_scripts = ReferenceScriptProvider(
+                        self.ingestion_config.examples_dir
+                    )
+        return self._reference_scripts
+
+    @property
     def test_case_generator(self) -> TestCaseGenerator:
         if self._test_case_generator is None:
             with self._lock:
@@ -167,6 +179,7 @@ class Services:
                         static_api_top_k=self.settings.retrieval.static_api_top_k,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
+                        reference_scripts=self.reference_scripts,
                     )
         return self._script_generator
 

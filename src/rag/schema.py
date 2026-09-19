@@ -30,13 +30,17 @@ DATASHEET_COLUMNS: tuple[tuple[str, str], ...] = (
 _TEST_TYPES = ("Positive", "Negative")
 _YES_NO = ("Yes", "No")
 _TRUE_FALSE = ("True", "False")
-# The three the delivered workbooks actually use. This tuple is also the
-# decoder's enum, so a technique missing here is one the model physically
-# cannot emit — "Cause Effect Testing" was named in prompts.yaml but absent
-# from this tuple, so every such case silently normalised to the default.
+# Must stay identical to the seven techniques named in the test_cases system
+# prompt in config/prompts.yaml. This tuple is also the decoder's enum, so a
+# technique missing here is one the model physically cannot emit — it was
+# reasoning correctly but forced to mislabel the case under a listed one.
 _TEST_TECHNIQUES = (
     "Equivalence Partitioning",
     "Boundary Value Analysis",
+    "Decision Table Testing",
+    "State Transition Testing",
+    "Error Guessing",
+    "All Pairs Testing",
     "Cause Effect Testing",
 )
 

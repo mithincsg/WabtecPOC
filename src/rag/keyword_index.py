@@ -42,10 +42,28 @@ def _is_identifier(token: str) -> bool:
     return any(c.isdigit() for c in token) and any(c.isalpha() for c in token)
 
 
+# An identifier's bare letter prefix ("tbc137" -> "tbc") is added once,
+# unboosted, alongside the boosted identifier itself. The identifier stays
+# atomic on purpose (TBC137 must never blur into TBC139), but a corpus
+# document that only ever illustrates the family generically - set_tbc's own
+# docstring says "Set a TBC, CFG, or other system-parameter value..." and
+# never spells out "TBC137" - shares no token at all with the query
+# otherwise. Measured on requirement L2R1145424 (which names TBC137):
+# set_tbc did not appear in the top 8 API hits without this; the bare prefix
+# match is what a plain word-matching search would already have given it.
+_IDENTIFIER_PREFIX_RE = re.compile(r"^[a-z]+")
+
+
 def boost_identifiers(tokens: list[str]) -> list[str]:
     boosted: list[str] = []
     for token in tokens:
-        boosted.extend([token] * (_IDENTIFIER_BOOST if _is_identifier(token) else 1))
+        if not _is_identifier(token):
+            boosted.append(token)
+            continue
+        boosted.extend([token] * _IDENTIFIER_BOOST)
+        prefix = _IDENTIFIER_PREFIX_RE.match(token)
+        if prefix:
+            boosted.append(prefix.group())
     return boosted
 
 
