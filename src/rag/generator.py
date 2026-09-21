@@ -48,6 +48,19 @@ class ScriptResult:
     requirement_id: str | None
     script: str
     elapsed_seconds: float = 0.0
+    # Method names the script calls (as `wcr_<something>.<name>(`) that do
+    # not exist anywhere in data/python_apis -- an invented call like
+    # `send_acknowledge_key`, which no amount of better retrieval can
+    # prevent, only catch after the fact. Empty when nothing to flag, or
+    # when there is no StaticContextProvider to validate against.
+    unknown_api_calls: list[str] = field(default_factory=list)
+    # `track_group`/`sub_folder` values the script writes that are not a
+    # real track name in this subdivision's own TrackNameFeature legend --
+    # catches the model writing the subdivision's display name (e.g.
+    # "Ginger") where a track name ("Main1", "Siding", ...) belongs. Empty
+    # when nothing to flag, when no subdivision was picked, or when there is
+    # no StaticContextProvider to validate against.
+    unknown_track_groups: list[str] = field(default_factory=list)
 
 
 class TestCaseGenerator:
@@ -295,6 +308,7 @@ class TestScriptGenerator:
             user_prompt,
             max_tokens=self.max_tokens,
             prefill=_SCRIPT_PREFILL,
+            stop_when=_script_looks_complete,
         )
         script = _extract_python(_strip_code_fence(raw))
         if script is None:
@@ -311,6 +325,7 @@ class TestScriptGenerator:
                 user_prompt + _PYTHON_ONLY_REMINDER,
                 max_tokens=self.max_tokens,
                 prefill=_SCRIPT_PREFILL,
+                stop_when=_script_looks_complete,
             )
             script = _extract_python(_strip_code_fence(raw))
         elif _unfilled_slots(script):
@@ -331,6 +346,7 @@ class TestScriptGenerator:
                         user_prompt + _NO_PLACEHOLDER_REMINDER,
                         max_tokens=self.max_tokens,
                         prefill=_SCRIPT_PREFILL,
+                        stop_when=_script_looks_complete,
                     )
                 )
             )
@@ -338,7 +354,14 @@ class TestScriptGenerator:
                 script = retry
 
         final_script = _finalize_script(script) if script is not None else _as_commented_out(raw)
+        final_script = _fix_test_type_table(final_script, test_cases)
+        final_script = _ensure_subdiv_id(final_script, subdivision)
+        final_script = _add_position_provenance_comments(final_script, self.static_context, subdivision)
         elapsed = round(time.monotonic() - started, 1)
+        unknown_calls = self._unknown_api_calls(final_script)
+        _log_unknown_api_calls(unknown_calls)
+        unknown_groups = self._unknown_track_groups(final_script, subdivision)
+        _log_unknown_track_groups(unknown_groups)
         logger.info(
             "Script generation finished in %.1fs: %d chars", elapsed, len(final_script)
         )
@@ -346,6 +369,82 @@ class TestScriptGenerator:
             requirement_id=parsed.requirement_id,
             script=final_script,
             elapsed_seconds=elapsed,
+            unknown_api_calls=unknown_calls,
+            unknown_track_groups=unknown_groups,
+        )
+
+    def _unknown_api_calls(self, script: str) -> list[str]:
+        """Method names `script` calls that data/python_apis never defines.
+
+        Retrieval (core methods, triggers, keyword search) can only improve
+        the odds the model calls a real method correctly -- it cannot rule
+        out the model inventing a plausible-sounding name it never saw
+        documentation for, the way `send_acknowledge_key` was invented from
+        a requirement's wording with no such method anywhere in the API.
+        This is the check that catches that case instead of a reviewer.
+        """
+        if self.static_context is None:
+            return []
+        known = self.static_context.known_api_methods()
+        called = self.static_context.api_call_names(script)
+        return sorted(name for name in called if name not in known)
+
+    def _unknown_track_groups(self, script: str, subdivision: str | None) -> list[str]:
+        """`track_group`/`sub_folder` values `script` writes that are not a
+        real track name for `subdivision`.
+
+        Same shape as `_unknown_api_calls`: retrieval and the prompt rules
+        can only improve the odds the model picks a real track name, not
+        rule out it reaching instead for a similarly-worded field it also
+        saw in the same context block (the subdivision's own display name,
+        e.g. "Ginger" for subdivision 8101, sitting beside the real track
+        names in the track-data context). This is the check that catches
+        that mix-up after the fact.
+        """
+        if self.static_context is None or not subdivision:
+            return []
+        known = self.static_context.known_track_groups(subdivision)
+        if not known:
+            # No TrackNameFeature legend indexed for this subdivision --
+            # nothing to validate against, so say nothing rather than flag
+            # every value as unknown.
+            return []
+        used = _track_group_values(script)
+        return sorted(name for name in used if name not in known)
+
+
+def _log_unknown_api_calls(unknown_calls: list[str]) -> None:
+    if unknown_calls:
+        logger.warning(
+            "Generated script calls %d method(s) not found anywhere in "
+            "data/python_apis -- likely invented, not just mis-called: %s",
+            len(unknown_calls),
+            ", ".join(unknown_calls),
+        )
+
+
+# A `"track_group": "Main1"` or `"sub_folder": "Main1"` keyword argument, as
+# written by `wcr_loco_sim.set_position(...)` / `wcr_track.set_track_to_use(...)`
+# per the house skeleton -- either single- or double-quoted, since the model
+# is not required to pick one style.
+_TRACK_GROUP_KWARG_RE = re.compile(
+    r"""["'](?:track_group|sub_folder)["']\s*:\s*["']([^"']+)["']"""
+)
+
+
+def _track_group_values(script: str) -> set[str]:
+    return set(_TRACK_GROUP_KWARG_RE.findall(script))
+
+
+def _log_unknown_track_groups(unknown_groups: list[str]) -> None:
+    if unknown_groups:
+        logger.warning(
+            "Generated script uses %d track_group/sub_folder value(s) not "
+            "found in this subdivision's own TrackNameFeature legend -- "
+            "likely the subdivision's display name written where a track "
+            "name belongs: %s",
+            len(unknown_groups),
+            ", ".join(unknown_groups),
         )
 
 
@@ -511,6 +610,181 @@ def _finalize_script(script: str) -> str:
     return _salvage_truncated(stubbed)
 
 
+# The `run_test.set_test_case_function_table({...})` call from the house
+# skeleton -- captures the dict literal on its own so it can be read and
+# replaced without disturbing the surrounding call syntax. Assumes a flat
+# `{"Type": "handler", ...}` literal (what the skeleton asks for); a dict
+# containing nested braces would not match, and is left alone rather than
+# mishandled.
+_FUNCTION_TABLE_CALL_RE = re.compile(
+    r"(run_test\.set_test_case_function_table\(\s*)(\{[^{}]*\})(\s*\))"
+)
+_TABLE_ENTRY_RE = re.compile(r"""["']([^"']+)["']\s*:\s*["']([^"']+)["']""")
+# The house skeleton's handler signature -- `def handle_test_case(data_sheet=None):`
+# -- matched generically on the parameter name rather than the literal
+# function name, since a script is free to call it anything.
+_HANDLER_DEF_RE = re.compile(r"^def\s+(\w+)\s*\(\s*data_sheet\b", re.M)
+
+
+def _fix_test_type_table(script: str, test_cases: list[TestCase]) -> str:
+    """Repairs `run_test.set_test_case_function_table(...)` so every test
+    type actually present in `test_cases` has an entry, deterministically.
+
+    Which test types are present is a mechanical fact already sitting on
+    `test_cases` (`TestCase.test_type`) -- not something that needs a model
+    to enumerate correctly on every generation the way the house skeleton's
+    `<{"Positive": "handle_test_case", ...} for the test types actually
+    present>` slot currently asks it to. Observed gap: a datasheet with both
+    Positive and Negative rows produced a script whose table named only
+    "Positive", so every Negative-typed row's branch existed but
+    `run_test.run()` never dispatched to it.
+
+    Existing entries are kept exactly as written -- a script may
+    legitimately route different test types to different handlers, and this
+    is a repair, not a rewrite. Only a test type with no entry at all is
+    added, pointed at whichever handler an existing entry already uses, or
+    failing that, the script's own `def <handler>(data_sheet...)`. Leaves
+    the script untouched if there's no table call to fix, every type is
+    already covered, or there is no handler to route a new entry to.
+    """
+    match = _FUNCTION_TABLE_CALL_RE.search(script)
+    if match is None:
+        return script
+
+    entries = dict(_TABLE_ENTRY_RE.findall(match.group(2)))
+    needed = sorted({tc.test_type for tc in test_cases if tc.test_type})
+    missing = [test_type for test_type in needed if test_type not in entries]
+    if not missing:
+        return script
+
+    handler = next(iter(entries.values()), None)
+    if handler is None:
+        handler_match = _HANDLER_DEF_RE.search(script)
+        handler = handler_match.group(1) if handler_match else None
+    if handler is None:
+        return script
+
+    for test_type in missing:
+        entries[test_type] = handler
+    logger.warning(
+        "Generated script's set_test_case_function_table was missing %d "
+        "test type(s) present in the approved test cases; added routed to "
+        "%r: %s",
+        len(missing),
+        handler,
+        ", ".join(missing),
+    )
+
+    fixed_dict = "{" + ", ".join(f'"{k}": "{v}"' for k, v in entries.items()) + "}"
+    return script[: match.start(2)] + fixed_dict + script[match.end(2) :]
+
+
+# A `wcr_track.set_track_to_use({...})` call's dict literal, captured the
+# same flat-dict way `_FUNCTION_TABLE_CALL_RE` captures the dispatch table.
+_SET_TRACK_CALL_RE = re.compile(
+    r"(wcr_track\.set_track_to_use\(\s*)(\{[^{}]*\})(\s*\))"
+)
+_SUBDIV_ID_KEY_RE = re.compile(r"""["']subdivID["']""")
+
+
+def _ensure_subdiv_id(script: str, subdivision: str | None) -> str:
+    """Adds a missing `subdivID` key to every `set_track_to_use(...)` call,
+    set to `subdivision` -- the same value the UI's picker sent into this
+    generation, not a guess.
+
+    Every real reference script includes `subdivID` in this call regardless
+    of `TrackType` (`data/Examples/reference_test_scripts`), even though the
+    API docstring only calls it required for `'AUX_POOL'` -- the house
+    convention is stricter than the bare API minimum, and the model has
+    been observed to drop it for `'AUX'`. A call that already has the key
+    is left exactly as written.
+    """
+    if not subdivision:
+        return script
+
+    def _replace(match: "re.Match[str]") -> str:
+        dict_text = match.group(2)
+        if _SUBDIV_ID_KEY_RE.search(dict_text):
+            return match.group(0)
+        inner = dict_text[1:-1].rstrip()
+        sep = ", " if inner.strip() else ""
+        value = subdivision if subdivision.isdigit() else f'"{subdivision}"'
+        return f"{match.group(1)}{{{inner}{sep}\"subdivID\": {value}}}{match.group(3)}"
+
+    fixed = _SET_TRACK_CALL_RE.sub(_replace, script)
+    if fixed != script:
+        logger.warning(
+            "Generated script had a set_track_to_use(...) call missing "
+            "subdivID; added subdivID=%s per the house convention.",
+            subdivision,
+        )
+    return fixed
+
+
+# One `wcr_loco_sim.set_position({...})` call and whatever follows it on the
+# same physical line -- captured separately so a comment already present
+# after the call (`rest` containing `#`) is left alone rather than doubled.
+_SET_POSITION_LINE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<call>wcr_loco_sim\.set_position\(\s*(?P<dict>\{[^{}]*\})\s*\))(?P<rest>[^\n]*)$",
+    re.MULTILINE,
+)
+_POSITION_FIELD_RE = re.compile(
+    r"""["'](track_group|point)["']\s*:\s*["']?([^,"'}]+?)["']?\s*[,}]"""
+)
+
+
+def _add_position_provenance_comments(
+    script: str, static_context: "StaticContextProvider | None", subdivision: str | None
+) -> str:
+    """Adds the block-id/milepost-range comment the system prompt asks for
+    (`# 385000(point) is within block 13022 (380000-390000)`) to every
+    `set_position(...)` call that doesn't already carry a trailing comment,
+    resolved deterministically against the real track data instead of left
+    to the model to remember on every generation -- observed gap: none of
+    11 branches in one real generation carried it despite the prompt rule.
+
+    A no-op wherever the real block can't be resolved (`find_block`
+    returning None: unknown subdivision, a `track_group` not in this
+    subdivision's own track names, or a `point` outside every block on
+    it) -- silence in that case, never a guessed value appended. Also a
+    no-op on a line that already has a `#` after the call, so a comment the
+    model did write is never duplicated.
+    """
+    if static_context is None or not subdivision:
+        return script
+
+    def _replace(match: "re.Match[str]") -> str:
+        if "#" in match.group("rest"):
+            return match.group(0)
+        fields = dict(_POSITION_FIELD_RE.findall(match.group("dict")))
+        track_group = fields.get("track_group")
+        point_text = fields.get("point")
+        if not track_group or point_text is None:
+            return match.group(0)
+        try:
+            point = float(point_text)
+        except ValueError:
+            return match.group(0)
+        block = static_context.find_block(subdivision, track_group, point)
+        if block is None:
+            return match.group(0)
+        block_id, start, end = block
+        point_disp = int(point) if point.is_integer() else point
+        start_disp = int(start) if start.is_integer() else start
+        end_disp = int(end) if end.is_integer() else end
+        comment = f"  # {point_disp}(point) is within block {block_id} ({start_disp}-{end_disp})"
+        return match.group(0) + comment
+
+    fixed = _SET_POSITION_LINE_RE.sub(_replace, script)
+    if fixed != script:
+        logger.warning(
+            "Generated script had set_position(...) call(s) with no "
+            "block/milepost provenance comment; added one from the real "
+            "track data where the block could be resolved."
+        )
+    return fixed
+
+
 def _salvage_truncated(script: str) -> str:
     """Makes a script that stopped mid-statement parse again.
 
@@ -568,6 +842,32 @@ def _salvage_truncated(script: str) -> str:
 # salvage it. Only the encoding comment is prefilled: enough to fix the
 # answer's form, not enough to put a value in the model's mouth.
 _SCRIPT_PREFILL = "# This Python file uses the following encoding: utf-8\n"
+
+# The house skeleton's required closing lines, per the system prompt's own
+# OUTPUT FORMAT rule: "the last line is `main()`. Nothing before, nothing
+# after." A bare `main()` call (as opposed to the `def main():` earlier in
+# the same skeleton) only ever legitimately appears once, here, so seeing it
+# is an unambiguous signal the script is complete -- not a guess from a
+# character or token count. Tolerates a trailing comment and either quote
+# style, since neither changes whether the script is actually finished.
+_SCRIPT_END_RE = re.compile(
+    r"if\s+__name__\s*==\s*[\"']__main__[\"']\s*:\s*\n\s*main\(\)\s*(#.*)?\s*$"
+)
+
+
+def _script_looks_complete(text: str) -> bool:
+    """True once `text` ends with the script's required closing lines.
+
+    Passed as `stop_when` to the script-generation LLM calls, so the stream
+    is closed the moment a correct script is finished rather than waiting on
+    a token budget -- which is what let a reasoning model that finishes a
+    correct script and then keeps going (opening `<think>` and rewriting the
+    whole thing again) run for tens of minutes before the budget finally cut
+    it off. Checking the real ending scales to any script length, unlike a
+    fixed token limit low enough to catch a runaway repeat but high enough
+    to never truncate a genuinely long, correct script for a large datasheet.
+    """
+    return bool(_SCRIPT_END_RE.search(text.rstrip()))
 
 _NO_PLACEHOLDER_REMINDER = """
 

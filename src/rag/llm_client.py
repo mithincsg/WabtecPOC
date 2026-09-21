@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import time
-from typing import Iterator, Protocol
+from typing import Callable, Iterator, Protocol
 
 import requests
 
@@ -113,6 +113,7 @@ class LLMClient(Protocol):
         max_tokens: int | None = None,
         json_schema: dict | None = None,
         prefill: str | None = None,
+        stop_when: Callable[[str], bool] | None = None,
     ) -> str:
         """Runs one generation. `json_schema`, when given, constrains
         decoding to a JSON value of that shape — the datasheet call uses it,
@@ -125,6 +126,15 @@ class LLMClient(Protocol):
         available when the answer has to be Python, not JSON. An endpoint
         that cannot prefill must still return the answer with `prefill`
         prepended, so callers see one continuous text either way.
+
+        `stop_when`, when given, is checked against the answer accumulated
+        so far after every streamed piece; the stream is closed the moment
+        it returns True rather than waiting for `max_tokens` or the model's
+        own end-of-turn. This is what lets a caller stop a model that keeps
+        generating past a structurally complete answer (a reasoning model
+        finishing a correct script and then rewriting it again) without
+        guessing a token budget tight enough to catch that but loose enough
+        to never truncate a genuinely long, correct answer.
         """
         ...
 
@@ -182,6 +192,7 @@ class OllamaClient:
         max_tokens: int | None = None,
         json_schema: dict | None = None,
         prefill: str | None = None,
+        stop_when: Callable[[str], bool] | None = None,
     ) -> str:
         options = {
             "temperature": self.config.temperature,
@@ -192,6 +203,18 @@ class OllamaClient:
         if self.config.num_threads > 0:
             options["num_thread"] = self.config.num_threads
 
+        think = self._think_flag()
+        if think is False:
+            # Ollama's `think` field only asks the server to split a
+            # model-native thinking channel out of the stream - it does not
+            # stop a model that writes `<think>...</think>` as plain content
+            # text on its own, which this qwen3 build's template gives no
+            # other lever against. Qwen3 is trained to also honour this
+            # literal soft-switch in the prompt itself, independent of the
+            # serving template, so append it whenever thinking is meant to
+            # be off.
+            user_prompt = f"{user_prompt}\n/no_think"
+
         payload = {
             "model": self.config.model,
             "messages": _messages(system_prompt, user_prompt, prefill),
@@ -199,7 +222,6 @@ class OllamaClient:
             "keep_alive": self.config.keep_alive,
             "options": options,
         }
-        think = self._think_flag()
         if think is not None:
             payload["think"] = think
         if json_schema is not None:
@@ -222,7 +244,7 @@ class OllamaClient:
         started = time.monotonic()
         try:
             raw, thought_chars, stopped_early, prompt_tokens, completion_tokens = (
-                self._stream_chat(payload, started)
+                self._stream_chat(payload, started, stop_when)
             )
         except LLMResponseError as exc:
             # An Ollama too old for structured output rejects `format` as a
@@ -237,7 +259,7 @@ class OllamaClient:
             )
             payload.pop("format")
             raw, thought_chars, stopped_early, prompt_tokens, completion_tokens = (
-                self._stream_chat(payload, started)
+                self._stream_chat(payload, started, stop_when)
             )
         content = strip_reasoning(raw)
         elapsed = time.monotonic() - started
@@ -271,7 +293,10 @@ class OllamaClient:
         return _rejoin_prefill(prefill, content)
 
     def _stream_chat(
-        self, payload: dict, started: float
+        self,
+        payload: dict,
+        started: float,
+        stop_when: Callable[[str], bool] | None = None,
     ) -> tuple[str, int, bool, int | None, int | None]:
         """Reads a streamed /api/chat response.
 
@@ -282,7 +307,9 @@ class OllamaClient:
         count for whatever model is configured, not a guess from character
         length, so this keeps working across a model swap with no code
         change. Either is None when the stream ended before that event (a
-        stall, a dropped connection, the total budget).
+        stall, a dropped connection, the total budget, or `stop_when`
+        stopping the stream deliberately — none of these got the `done`
+        event with the real counts on it).
         A reasoning model can emit `message.thinking` for minutes before its
         first `message.content` token, so counting that is what tells a
         thinking model apart from a silent one - both look like an empty
@@ -290,6 +317,10 @@ class OllamaClient:
         A stall — no token for `stall_timeout_seconds` — is the transport's
         read timeout, so it arrives here as an exception rather than a short
         read.
+        `stop_when`, when it returns True against the answer accumulated so
+        far, ends the stream immediately — closing the response is what
+        stops Ollama from continuing to generate server-side, the same way
+        a dropped connection already does elsewhere in this method.
         """
         stall = self.config.stall_timeout_seconds
         budget = self.config.request_timeout_seconds
@@ -320,6 +351,23 @@ class OllamaClient:
                     if piece:
                         chunks.append(piece)
                         print(piece, end="", flush=True)
+                        # Checked on every piece, not just ones containing
+                        # ")" that could complete the sentinel, because a
+                        # streamed piece can split "main())" across chunks
+                        # arbitrarily -- `stop_when` itself is cheap (a
+                        # single regex search), so there is nothing to gain
+                        # by trying to pre-filter which pieces are worth it.
+                        if stop_when is not None and stop_when("".join(chunks)):
+                            logger.info(
+                                "%s reached the expected end of output after "
+                                "%d chars (%.0fs) -- stopping the stream "
+                                "instead of waiting for more tokens.",
+                                self.config.model,
+                                sum(len(c) for c in chunks),
+                                time.monotonic() - started,
+                            )
+                            print()
+                            return "".join(chunks), thought_chars, False, None, None
                     thought_chars += len(message.get("thinking") or "")
                     if event.get("done"):
                         prompt_tokens = event.get("prompt_eval_count")

@@ -361,6 +361,11 @@ class ChunkMetadata:
     # it is how the UI's subdivision picker labels an otherwise bare five-digit
     # ID, so it has to survive as metadata rather than only inside section_path.
     subdivision_name: str | None = None
+    # Track-data only: the subdivision's own real railroad SCAC (`UP`), from
+    # xml_extractor.py's `<RailroadSCAC>` -- an environment fact, not a
+    # search result, so it must survive onto every chunk from that file the
+    # same way subdivision/subdivision_name do.
+    railroad_scac: str | None = None
 
     def to_chroma_dict(self) -> dict[str, Any]:
         """Chroma metadata values must be str/int/float/bool - drop Nones
@@ -426,4 +431,5 @@ def build_metadata(
         table_title=locator.get("table_title"),
         subdivision=locator.get("subdivision"),
         subdivision_name=locator.get("subdivision_name"),
+        railroad_scac=locator.get("railroad_scac"),
     )
