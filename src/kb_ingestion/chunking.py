@@ -67,43 +67,35 @@ def normalize_code(text: str) -> str:
 # --- Tokenization --------------------------------------------------------
 
 
+# Roughly how a subword tokenizer splits this corpus: letter runs, single
+# digits (identifiers like "08880" become several tokens, not one) and each
+# punctuation mark on its own.
+_PIECE_RE = re.compile(r"[A-Za-z]+|\d|[^\sA-Za-z0-9]")
+
+# Measured against BAAI/bge-m3 over a sample of real chunks from all three
+# sources: the piece count runs 1.03x (track XML) to 1.20x (API stubs) under
+# the real count, so one factor covers the corpus within about 15%.
+_PIECES_TO_TOKENS = 1.15
+
+
 class TokenCounter:
-    """Wraps the bge-m3 tokenizer for accurate token counts during chunk
-    packing (bge-m3 supports up to 8192 tokens, so naive char-count budgets
-    would under/over-pack badly). Falls back to a whitespace-word
-    approximation if the tokenizer can't be loaded (e.g. no network), so the
-    pipeline degrades gracefully instead of hard-failing.
+    """Approximate token counts for chunk packing, computed locally.
+
+    Deliberately not a real tokenizer. Nothing in this app is embedded any
+    more, so `chunk_max_tokens` only bounds how much text a chunk carries
+    into a prompt — an estimate within ~15% is as useful as an exact count,
+    and it costs no dependency, no model download and no network call at
+    startup.
+
+    A plain word count is not good enough to substitute: on the track XML,
+    where a line is `BlockId=2001 | Milepost=123.45`, it undercounts by more
+    than 3x and would silently triple every chunk.
     """
-
-    def __init__(self, model_name: str = "BAAI/bge-m3"):
-        self.model_name = model_name
-        self._tokenizer = None
-        self._load_failed = False
-
-    def _tokenizer_instance(self):
-        if self._tokenizer is not None or self._load_failed:
-            return self._tokenizer
-        try:
-            from transformers import AutoTokenizer
-
-            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        except Exception as exc:  # noqa: BLE001 - deliberate broad fallback
-            logger.warning(
-                "Could not load tokenizer for %s (%s); falling back to a "
-                "whitespace-based token approximation.",
-                self.model_name,
-                exc,
-            )
-            self._load_failed = True
-        return self._tokenizer
 
     def count(self, text: str) -> int:
         if not text:
             return 0
-        tokenizer = self._tokenizer_instance()
-        if tokenizer is None:
-            return len(text.split())
-        return len(tokenizer.encode(text, add_special_tokens=False))
+        return round(len(_PIECE_RE.findall(text)) * _PIECES_TO_TOKENS)
 
 
 # --- Chunking (token-budget packing within pre-scoped structural units) ---
@@ -334,14 +326,7 @@ class ChunkMetadata:
     chunk_index: int
     total_chunks_in_unit: int
     file_hash: str
-    embedding_model: str
-    ingested_at: str
-    # Fingerprint of the ingestion package's own code + the config fields
-    # that affect chunk content, stamped on after chunking (see
-    # kb_ingestion.incremental). Lets a re-run skip a file whose bytes are
-    # unchanged AND whose extraction/chunking logic hasn't changed since it
-    # was last embedded, while still reprocessing it if either has.
-    pipeline_fingerprint: str | None = None
+    indexed_at: str
     section_path: str | None = None
     page: int | None = None
     sheet: str | None = None
@@ -354,7 +339,7 @@ class ChunkMetadata:
     method_name: str | None = None
     table_index: int | None = None
     table_title: str | None = None
-    # Track-data only: which subdivision report this chunk came from, so
+    # Track-data only: which subdivision export this chunk came from, so
     # retrieval can be restricted to the track a requirement is tested on.
     subdivision: str | None = None
     # The subdivision's display name ("Ginger"). Not searched or filtered on —
@@ -387,7 +372,6 @@ def build_metadata(
     chunk_index: int,
     total_chunks_in_unit: int,
     file_hash: str,
-    embedding_model: str,
     text: str,
     module_name: str | None = None,
     row_start: int | None = None,
@@ -415,8 +399,7 @@ def build_metadata(
         chunk_index=chunk_index,
         total_chunks_in_unit=total_chunks_in_unit,
         file_hash=file_hash,
-        embedding_model=embedding_model,
-        ingested_at=datetime.now(timezone.utc).isoformat(),
+        indexed_at=datetime.now(timezone.utc).isoformat(),
         section_path=locator.get("section_path") or None,
         page=locator.get("page"),
         sheet=locator.get("sheet"),

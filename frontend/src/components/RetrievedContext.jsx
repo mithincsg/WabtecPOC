@@ -1,6 +1,5 @@
-// Which knowledge-base chunks the model actually saw. Collapsed by default:
-// it's the first thing to open when a test case looks wrong, and noise the
-// rest of the time.
+// Which chunks the model actually saw. Collapsed by default: it's the first
+// thing to open when a test case looks wrong, and noise the rest of the time.
 
 export default function RetrievedContext({ chunks, subdivisions }) {
   if (!chunks.length) return null;
@@ -18,10 +17,7 @@ export default function RetrievedContext({ chunks, subdivisions }) {
               <span className="tag">{chunk.document_type}</span>
               <span className="path">{chunk.source}</span>
               <span className="scores">
-                {chunk.similarity !== null && `cos ${chunk.similarity.toFixed(2)}`}
-                {chunk.similarity !== null && chunk.bm25_score !== null && " · "}
                 {chunk.bm25_score !== null && `bm25 ${chunk.bm25_score.toFixed(1)}`}
-                {` · ${chunk.matched_by.join(" + ")}`}
               </span>
             </div>
             <p className="excerpt">{chunk.excerpt}</p>

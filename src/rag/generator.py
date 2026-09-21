@@ -10,21 +10,43 @@ from .llm_client import LLMClient
 from .prompts import PromptLibrary
 from .requirement_parser import parse_requirement
 from .keyword_index import KeywordHit
-from .retriever import HybridRetriever, RetrievedChunk
 from .schema import TEST_CASES_JSON_SCHEMA, TestCase, parse_test_cases
 from .static_context import StaticContextProvider
 
 logger = logging.getLogger(__name__)
 
-# Document types holding material the script generator imitates rather than
-# reads for facts. Named as defaults, overridable per call, so renaming a
-# folder in config/config.yaml doesn't require a code change.
-DEFAULT_API_DOC_TYPE = "python_apis"
-DEFAULT_SCRIPT_DOC_TYPE = "reference_test_scripts"
-
 # Ceiling on one generation, overridden from config. Not a target — see
 # TestCaseGenerator.generate.
 DEFAULT_MAX_TEST_CASES = 20
+
+
+@dataclass
+class RetrievedChunk:
+    """One BM25 hit, in the shape the API reports retrieved context in.
+
+    There is no `similarity`: the dense arm is gone, so every hit the app
+    returns came from keyword search.
+    """
+
+    chunk_id: str
+    text: str
+    metadata: dict
+    bm25_score: float = 0.0
+
+    @property
+    def source_label(self) -> str:
+        parts = [
+            str(
+                self.metadata.get("source_file")
+                or self.metadata.get("source_path")
+                or "unknown source"
+            )
+        ]
+        if self.metadata.get("section_path"):
+            parts.append(str(self.metadata["section_path"]))
+        if self.metadata.get("method_name"):
+            parts.append(str(self.metadata["method_name"]))
+        return " > ".join(parts)
 
 
 @dataclass
@@ -67,9 +89,8 @@ class TestCaseGenerator:
     """requirement -> understanding -> parameter-config context -> LLM ->
     datasheet rows.
 
-    Deliberately takes no `HybridRetriever`: the embedded knowledge base is
-    not retrieved for this call at all, only the parameter configuration
-    guide's records (see `generate`).
+    Its only context is the parameter configuration guide's records (see
+    `generate`).
     """
 
     def __init__(
@@ -105,8 +126,8 @@ class TestCaseGenerator:
         runs on.
 
         Context comes from the parameter configuration guide's records
-        (`data/parameter_config/`) only — the embedded knowledge base is not
-        retrieved for this call at all. The parameter a requirement names is
+        (`data/parameter_config/`) and nothing else. The parameter a
+        requirement names is
         the thing its test cases assert against, and its valid range is what
         a boundary case is written from, so the records are what a row needs.
         """
@@ -207,23 +228,17 @@ class TestScriptGenerator:
 
     def __init__(
         self,
-        retriever: HybridRetriever,
         llm_client: LLMClient,
         prompts: PromptLibrary,
         *,
-        api_doc_type: str = DEFAULT_API_DOC_TYPE,
-        script_doc_type: str = DEFAULT_SCRIPT_DOC_TYPE,
         max_tokens: int | None = None,
         static_context: StaticContextProvider | None = None,
         static_api_top_k: int = 4,
         static_track_top_k: int = 4,
         static_parameter_top_k: int = 6,
     ):
-        self.retriever = retriever
         self.llm_client = llm_client
         self.prompts = prompts
-        self.api_doc_type = api_doc_type
-        self.script_doc_type = script_doc_type
         self.max_tokens = max_tokens
         self.static_context = static_context
         self.static_api_top_k = static_api_top_k
@@ -268,21 +283,14 @@ class TestScriptGenerator:
             if self.static_context
             else ""
         )
-        # Parameter names/values, message/event names and defaults come from
-        # two places: the TBC/CFG/THE records converted out of the parameter
-        # configuration guide, and the knowledge-base data dictionaries — the
-        # same general retrieval pass test-case generation uses, re-run
-        # against the script's query (requirement + approved descriptions).
-        # The records go first: a script asserting on TBC137 needs that
-        # parameter's own row, not the paragraph nearest to it.
-        parameter_records = (
+        # Parameter names, values, units and defaults come from the TBC/CFG/THE
+        # records converted out of the parameter configuration guide — the
+        # same records test-case generation uses, re-ranked against the
+        # script's query (requirement + approved descriptions).
+        parameter_context = (
             self.static_context.parameter_context(query, self.static_parameter_top_k)
             if self.static_context
             else ""
-        )
-        parameter_context = _append_static_context(
-            parameter_records,
-            self.retriever.retrieve(query, requirement_id=parsed.requirement_id).context,
         )
 
         prompt = self.prompts.test_script
@@ -292,16 +300,19 @@ class TestScriptGenerator:
             test_cases=_numbered_test_cases(test_cases),
             api_context=api_context or "(No API definitions were retrieved.)",
             track_context=track_context or "(No track data was retrieved.)",
-            parameter_context=parameter_context or "(No parameter/data-dictionary context was retrieved.)",
+            parameter_context=parameter_context or "(No parameter records were retrieved.)",
         )
         logger.info(
-            "Context assembled: api=%d chars, track=%d chars, parameter/kb=%d chars; "
+            "Context assembled: api=%d chars, track=%d chars, parameter=%d chars; "
             "sending %d-char prompt to the script LLM call",
             len(api_context),
             len(track_context),
             len(parameter_context),
             len(user_prompt),
         )
+        _log_context_block("python_apis", api_context)
+        _log_context_block("track_data", track_context)
+        _log_context_block("parameter records", parameter_context)
 
         raw = self.llm_client.generate(
             prompt.system,
@@ -449,28 +460,16 @@ def _log_unknown_track_groups(unknown_groups: list[str]) -> None:
 
 
 def _chunk_from_hit(hit: KeywordHit) -> RetrievedChunk:
-    """A parameter-config keyword hit, in the shape the API's
-    retrieved-context response already knows how to read.
-
-    `similarity` stays None — these are BM25-only hits, never embedded.
-    """
     return RetrievedChunk(
         chunk_id=hit.chunk_id,
         text=hit.text,
         metadata=hit.metadata,
         bm25_score=hit.score,
-        score=hit.score,
-        matched_by=["keyword"],
     )
 
 
 def _log_context_block(label: str, text: str) -> None:
     logger.info("--- %s context (%d chars) ---\n%s", label, len(text), text or "(empty)")
-
-
-def _append_static_context(context: str, *extra_blocks: str) -> str:
-    blocks = [b for b in (context, *extra_blocks) if b]
-    return "\n\n---\n\n".join(blocks)
 
 
 def resolve_folder(
@@ -488,8 +487,8 @@ def resolve_folder(
     but isn't.
 
     A free function, not just a generator method, because the API's folder
-    lookup answers on every keystroke and must not pull in the generator —
-    and with it the embedding model — to do it. Generation resolves the
+    lookup answers on every keystroke and must not pull in the generator to
+    do it. Generation resolves the
     folder through the same call, so what the UI shows before generating is
     what the rows and the exported spreadsheet will carry.
     """

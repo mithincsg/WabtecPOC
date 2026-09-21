@@ -136,21 +136,20 @@ async def health() -> HealthResponse:
 
 
 def _health() -> HealthResponse:
-    """What the UI shows on load: whether the knowledge base has anything in
-    it and whether the model is reachable. Neither is fatal, but both are
-    worth knowing before waiting on a generation.
+    """What the UI shows on load: whether the static index has anything in it
+    and whether the model is reachable. Neither is fatal, but both are worth
+    knowing before waiting on a generation.
     """
     try:
-        chunk_count = services.vector_store.count()
+        chunk_count = services.static_context.chunk_count
     except Exception:  # noqa: BLE001
-        logger.exception("Could not read the knowledge base")
+        logger.exception("Could not read the static index")
         chunk_count = 0
 
     models = services.llm_client.available_models()
     configured = services.settings.generation.model
     return HealthResponse(
-        knowledge_base_chunks=chunk_count,
-        embedding_model=services.settings.retrieval.embedding_model,
+        indexed_chunks=chunk_count,
         llm_model=configured,
         # Ollama reports tags as "qwen2.5:7b-instruct"; a config value
         # without the tag still refers to the same model.
@@ -226,12 +225,7 @@ def list_track_subdivisions() -> SubdivisionsResponse:
     """
     return SubdivisionsResponse(
         subdivisions=[
-            SubdivisionOut(
-                id=subdivision.id,
-                name=subdivision.name,
-                label=subdivision.label,
-                chunks=subdivision.chunks,
-            )
+            SubdivisionOut(id=subdivision.id, chunks=subdivision.chunks)
             for subdivision in services.static_context.subdivisions
         ]
     )
@@ -357,9 +351,7 @@ def _chunk_out(chunk) -> RetrievedChunkOut:
         chunk_id=chunk.chunk_id,
         source=chunk.source_label,
         document_type=str(chunk.metadata.get("document_type") or ""),
-        similarity=round(chunk.similarity, 3) if chunk.similarity is not None else None,
-        bm25_score=round(chunk.bm25_score, 2) if chunk.bm25_score is not None else None,
-        matched_by=chunk.matched_by,
+        bm25_score=round(chunk.bm25_score, 2),
         excerpt=chunk.text[:600],
     )
 

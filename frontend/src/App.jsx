@@ -202,7 +202,7 @@ export default function App() {
         <span className="subtitle">I-ETMS Protect · onboard segment</span>
         <div className="status">
           <span>
-            knowledge base <b>{health ? health.knowledge_base_chunks.toLocaleString() : "—"}</b>{" "}
+            index <b>{health ? health.indexed_chunks.toLocaleString() : "—"}</b>{" "}
             chunks
           </span>
           <span>
@@ -298,14 +298,13 @@ export default function App() {
               <option value="">Select a subdivision…</option>
               {subdivisions.map((entry) => (
                 <option key={entry.id} value={entry.id}>
-                  {entry.label || entry.id}
+                  {entry.id}
                 </option>
               ))}
             </select>
             {subdivision ? (
               <p className="help">
-                Track values will come only from{" "}
-                <b>{subdivisions.find((e) => e.id === subdivision)?.label || subdivision}</b>.
+                Track values will come only from <b>{subdivision}</b>.
               </p>
             ) : null}
             {subdivisionMissing ? (
@@ -348,11 +347,11 @@ export default function App() {
             </div>
           )}
 
-          {health && health.knowledge_base_chunks === 0 && (
+          {health && health.indexed_chunks === 0 && (
             <div className="notice">
               <p>
-                The knowledge base is empty. Run{" "}
-                <code>python scripts/run_ingestion.py</code> before generating.
+                Nothing is indexed. Check the folders under{" "}
+                <code>static_sources</code> in <code>config/config.yaml</code>.
               </p>
             </div>
           )}

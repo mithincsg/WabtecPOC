@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from . import ExtractedUnit
-from .html_extractor import normalize_subdivision, subdivision_from_folder
 
 # Every element in these files is namespaced
 # ("{http://www.wabtec.com/WRE/SystemTest/Track}BlockFeature"). Nothing here
@@ -75,8 +74,8 @@ def _is_legal_xml_char(code: int) -> bool:
 
 
 def _header_line(label: str, record_type: str, first_line: str) -> str:
-    """The label row for a record type, mirroring the column-header row an
-    HTML report table starts with.
+    """The label row for a record type, naming the subdivision, the record
+    type and its fields.
 
     It earns its place twice over. Chunking repeats a table unit's first line
     on every chunk it splits the unit into, so this is what keeps a chunk from
@@ -114,23 +113,20 @@ def _text_of(element: ET.Element) -> str:
 
 
 class XMLTrackDataExtractor:
-    """Wabtec `<subdivision>-subdiv.xml` track files — the machine-readable
-    half of a subdivision export, paired with the HTML report the same folder
-    holds.
+    """Wabtec `<subdivision>-subdiv.xml` track files — the only track source
+    the app reads.
 
-    The two are not redundant. The HTML report is the human view: a handful of
-    grouped tables, formatted for reading. The XML is the full serialized
-    track database, and carries fields the report never prints — WIU security
-    keys and addresses, per-block element/heading/elevation series, device
-    status table indices, acquisition records. Test scripts need exactly those
-    values, so this is indexed alongside the report rather than instead of it.
+    It is the full serialized track database, and carries every field a test
+    script needs: WIU security keys and addresses, per-block
+    element/heading/elevation series, device status table indices,
+    acquisition records. The human-readable HTML report that used to sit
+    beside it printed a strict subset of this and was dropped.
 
     The XML has no labels of its own beyond tag names, so the shape is
     recovered from the tree: every repeated feature record becomes one line of
     `field=value` pairs, records of the same type are collected together, and
-    each type becomes one ExtractedUnit (unit_type="table") — the same shape
-    the HTML extractor produces, so both flow through the identical
-    oversized-table line-splitting in chunking.
+    each type becomes one ExtractedUnit (unit_type="table"), which chunking
+    splits on line boundaries when a record type runs long.
 
     Records nested under a parent (a heading inside a block) are prefixed with
     the parent's identifier, because flattening otherwise strips the one thing
@@ -160,7 +156,7 @@ class XMLTrackDataExtractor:
         for index, (record_type, lines) in enumerate(records.items(), start=1):
             if not lines:
                 continue
-            text = "\n".join([_header_line(label, record_type, lines[0]), *lines])
+            text = "\n".join([_header_line(subdivision, record_type, lines[0]), *lines])
             if not text.strip():
                 continue
             units.append(
@@ -168,11 +164,10 @@ class XMLTrackDataExtractor:
                     text=text,
                     unit_type="table",
                     locator={
-                        "section_path": f"{label} > {record_type}",
+                        "section_path": f"{subdivision} > {record_type}",
                         "table_title": record_type,
                         "table": index,
-                        # The same key the HTML extractor stamps, so one
-                        # subdivision filter covers both files in the folder.
+                        # What the UI's picker filters on.
                         "subdivision": subdivision,
                         "subdivision_name": subdivision_name or None,
                         "railroad_scac": railroad_scac,
@@ -310,8 +305,7 @@ def _first_text(root: ET.Element, tag: str) -> str:
 
 
 def _subdivision_id(root: ET.Element, file_path: Path) -> str:
-    """The subdivision this file describes, in the zero-padded form the track
-    map and the HTML reports use.
+    """The subdivision this file describes, zero-padded to five digits.
 
     The containing folder is trusted first: `data/track_data/08101/` is how
     the files are organised and how the UI's subdivision picker lists them, so
@@ -329,3 +323,24 @@ def _subdivision_id(root: ET.Element, file_path: Path) -> str:
 
     match = re.search(r"(\d{3,6})", file_path.stem)
     return normalize_subdivision(match.group(1)) if match else file_path.stem
+
+
+def subdivision_from_folder(file_path: Path) -> str:
+    """The subdivision ID from the folder a track file sits in, or "" if that
+    folder isn't named after one.
+
+    Track data is organised one folder per subdivision
+    (`data/track_data/08101/08101-subdiv.xml`), which makes the folder the
+    single most reliable statement of which subdivision a file belongs to.
+    """
+    name = file_path.parent.name.strip()
+    return normalize_subdivision(name) if name.isdigit() else ""
+
+
+def normalize_subdivision(value: str) -> str:
+    """"8880", "08880" and " 8880 " all name the same subdivision. Padding to
+    five digits gives one canonical form, so a subdivision written either way
+    still matches what was indexed.
+    """
+    digits = "".join(c for c in str(value) if c.isdigit())
+    return digits.zfill(5) if digits else str(value).strip()

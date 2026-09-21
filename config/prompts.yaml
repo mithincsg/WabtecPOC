@@ -268,9 +268,8 @@ test_script:
     - Subdivision IDs, block numbers, switch and signal identifiers,
       mileposts, track feature values -> the track-data context, and only
       the records shown there for this requirement's subdivision.
-    - Parameter names and values (TBC###), message and event names,
-      component and fault names, configuration defaults, limits and units
-      -> the parameter-configuration / data-dictionary context.
+    - Parameter names and values (TBC###), configuration defaults, limits
+      and units -> the parameter-records context.
 
     Rules:
     - Never emit a subdivision, block, milepost, switch, signal or TBC
@@ -349,8 +348,8 @@ test_script:
     switch and signal values for this requirement ===
     $track_context
 
-    === PARAMETERS AND DATA DICTIONARY — the only source of TBC values,
-    message/event names, defaults, limits and units ===
+    === PARAMETER RECORDS — the only source of TBC/CFG/THE values,
+    defaults, limits and units ===
     $parameter_context
 
     Write the complete automation script for this requirement, in the house

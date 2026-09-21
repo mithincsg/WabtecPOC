@@ -1,10 +1,6 @@
-
-
-sources:
-  - path: data/knowledge_base
-    document_type: knowledge_base
-    subfolders_as_type: true
-  
+# Every folder the app reads. All of them are parsed from disk on startup
+# into one in-process BM25 index (src/rag/static_context.py) — nothing is
+# embedded and there is no vector store.
 static_sources:
   - path: data/python_apis
     document_type: python_apis
@@ -34,11 +30,3 @@ pdf_heading_size_ratio: 1.15
 
 pdf_table_repeat_threshold: 0.5
 
-# --- Embeddings ----------------------------------------------------------
-embedding_model: BAAI/bge-m3
-embedding_batch_size: 16
-embedding_device: auto   # auto | cpu | cuda
-
-# --- Vector store --------------------------------------------------------
-chroma_persist_dir: chroma_db
-chroma_collection: kb_collection
