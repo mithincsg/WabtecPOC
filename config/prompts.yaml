@@ -58,20 +58,6 @@ test_cases:
       stated limit or one step past it in its own unit; a "lower of" /
       "most restrictive of" comparison needs an admissible value on each
       side.
-    - Resolve a parameter identifier (TBC###) to a value everywhere it
-      appears in a case's condition list, not only on the line that case
-      turns on. A bullet inherited unchanged from the requirement's shared
-      condition list still names a real parameter — leaving it as a bare
-      identifier with no number is never acceptable final text. Where the
-      case does not turn on that parameter, resolve it to the same
-      representative value used for the requirement's positive-path case
-      (a value inside its valid range, or its common value where the
-      record gives one); do not vary it case to case. Resolve each side of
-      a comparison independently: a side backed by a parameter record gets
-      a number from that record, a side with no record of its own (e.g. a
-      derived or track-side value) stays worded per the rule above and its
-      gap is named in "comments" — one side lacking a source never excuses
-      leaving the other side, which does have one, unresolved.
     - Never carry a value across from where it does not belong: a track
       speed is not a parameter value, one parameter's default is not
       another's, and a value that fit another requirement does not fit
@@ -85,31 +71,92 @@ test_cases:
       the condition in words (`<identifier> at its configured value`) and
       name the missing bound in "comments". An unsupported number the
       reviewer cannot spot is a defect.
-    - Cover the positive path first, then derive further cases by each of
-      the three techniques the requirement supports:
-      - Equivalence Partitioning: one representative case per class of
-        inputs that behave alike — each enumerated type, state, direction
-        or mode the requirement names, each alternative of an "or" it
-        states, and each value class inside a range. One case per class,
-        never two from the same class.
-      - Boundary Value Analysis: every limit the context states — each
-        parameter record's valid-range endpoints, each threshold, count,
-        duration or distance the requirement states — gets all four of:
-        the minimum, the maximum, one step below the minimum, one step
-        above the maximum, in the limit's own unit, the last two marked
-        `(out of range)`. Four per limit, not one.
-      - Cause Effect Testing: take the conditions the requirement needs to
-        hold and invert them one at a time. One case per condition, that
-        condition stated in its failing form, every other condition
-        unchanged, verifying the behaviour does not occur. Then any
-        combination whose interaction the requirement makes observable.
-      Skip a technique only where the requirement offers nothing for it,
-      and say so in that requirement's last case's "comments". Do not
-      restate a case you have written.
     - One test case = one verifiable behaviour. Two "Verify" lines means
       two test cases.
     - The requirement decides the count, not a target number. Never add a
       case to reach a count or drop a behaviour it states.
+
+    TEST TECHNIQUES
+
+    Cover the positive path first, then derive further cases by each of the
+    seven techniques the requirement supports, in this order:
+
+    - Equivalence Partitioning: one representative case per class of
+      inputs that behave alike — each enumerated type, state, direction or
+      mode the requirement names, each alternative of an "or" it states,
+      and each value class inside a range. One case per class, never two
+      from the same class.
+
+    - Boundary Value Analysis: every limit the context states — each
+      parameter record's valid-range endpoints, each threshold, count,
+      duration or distance the requirement states — gets all four of: the
+      minimum, the maximum, one step below the minimum, one step above the
+      maximum, in the limit's own unit, the last two marked
+      `(out of range)`. Four per limit, not one.
+
+    - Decision Table Testing: where the outcome depends on two or more
+      conditions taken together — an "and", an "and not", a precedence
+      between rules, a "lower of" / "most restrictive of" comparison, or a
+      table of inputs the requirement enumerates — build that decision
+      table and write one case per rule whose outcome the requirement
+      distinguishes. Each case states every condition of the table at its
+      value for that rule, and verifies that rule's outcome. Collapse
+      rules that reach the same outcome for the same reason into one
+      representative case, and write no rule whose outcome the requirement
+      leaves undefined. Use this, not Cause Effect Testing, whenever it is
+      the *combination* rather than a single failing condition that the
+      case turns on.
+
+    - State Transition Testing: where the requirement names modes, states
+      or statuses of the on-board segment and the events that move between
+      them, write one case per transition the requirement states: the
+      starting state as a condition, the triggering event named as the
+      context states it, verifying the state the segment arrives in and
+      the behaviour of that transition. Add one case per event the
+      requirement says a state must ignore or reject, verifying the
+      segment remains in that state. Use only states, events and
+      transitions the context names — never invent an intermediate state,
+      and never assume a transition the requirement does not state.
+
+    - All Pairs Testing: where three or more independent inputs each take
+      more than one admissible value and the requirement does not make
+      their full combination observable, write the smallest set of cases
+      in which every pair of values drawn from two different inputs
+      appears in at least one case. Every case names all of those inputs
+      at the value it holds them at. Use only where there are at least
+      three such independent inputs; with two, use Decision Table Testing,
+      and with one, Equivalence Partitioning.
+
+    - Cause Effect Testing: take the conditions the requirement needs to
+      hold and invert them one at a time. One case per condition, that
+      condition stated in its failing form, every other condition
+      unchanged, verifying the behaviour does not occur. Then any
+      combination whose interaction the requirement makes observable and
+      that no decision-table rule already covers.
+
+    - Error Guessing: last, and drawn from how an on-board PTC function of
+      this kind fails in service rather than from the requirement's text —
+      a required input absent, stale, duplicated or arriving out of order;
+      a parameter left at no configured value; the trigger arriving during
+      initialisation, cut out or a mode change; two triggers arriving in
+      the same processing cycle; the condition clearing before the
+      behaviour completes. The same sourcing rules apply: no identifier or
+      value the context does not contain, and the assumption the case
+      rests on is named in "comments". At most two per requirement, and
+      none that restates a case already written.
+
+    Skip a technique only where the requirement offers nothing for it, and
+    say which ones you skipped, and why, in that requirement's last case's
+    "comments". Do not restate a case you have written.
+
+    One case belongs to exactly one technique — the one that generated it.
+    Where a case could be reached two ways, label it by the first
+    technique that reaches it in this order: Boundary Value Analysis,
+    State Transition Testing, Decision Table Testing, All Pairs Testing,
+    Equivalence Partitioning, Cause Effect Testing, Error Guessing. Do not
+    write the same case twice under two labels.
+
+    COVERAGE
 
     Write "coverage" first and in full, before any test case. One line per
     case you are going to write, naming what that case covers:
@@ -119,10 +166,19 @@ test_cases:
       a range;
     - four lines per limit the context or the requirement states — its
       minimum, its maximum, one step below, one step above;
+    - one line per distinguishable rule of the requirement's decision
+      table, naming the condition values of that rule;
+    - one line per state transition the requirement states, and per event
+      a state must ignore;
+    - one line per case in the all-pairs set, naming the input values it
+      holds;
     - one line per condition the requirement requires to hold, in its
-      failing form.
+      failing form;
+    - one line per error-guessing case, naming the failure mode.
     Then write "test_cases": one case per "coverage" line, in the same
     order, same length. Stopping short of the list you wrote is a defect.
+
+    OUTPUT
 
     Return ONLY a JSON object, no prose or fences:
 
@@ -146,11 +202,13 @@ test_cases:
     }
 
     "test_type": Positive or Negative. "test_technique" is exactly one of
-    "Equivalence Partitioning", "Boundary Value Analysis" or "Cause Effect
-    Testing" — the technique that case was derived by, per the rules
-    above. No other value. "optimization_technique" is Default unless the
-    context says otherwise. "retired" is always False. "scorable" is No
-    unless the context indicates otherwise.
+    "Boundary Value Analysis", "Equivalence Partitioning", "Decision Table
+    Testing", "State Transition Testing", "Error Guessing", "All Pairs
+    Testing" or "Cause Effect Testing" — the technique that case was
+    derived by, per the rules above. No other value, and no combined
+    value. "optimization_technique" is Default unless the context says
+    otherwise. "retired" is always False. "scorable" is No unless the
+    context indicates otherwise.
   user: |
     Requirement ID: $requirement_id
 

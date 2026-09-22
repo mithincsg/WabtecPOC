@@ -352,10 +352,8 @@ class ChunkMetadata:
     # same way subdivision/subdivision_name do.
     railroad_scac: str | None = None
 
-    def to_chroma_dict(self) -> dict[str, Any]:
-        """Chroma metadata values must be str/int/float/bool - drop Nones
-        and the id (stored separately as the Chroma document id).
-        """
+    def to_dict(self) -> dict[str, Any]:
+        """Drop Nones and the id, which the index stores separately."""
         return {
             k: v
             for k, v in self.__dict__.items()

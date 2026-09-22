@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -115,8 +116,29 @@ def script_to_text(script: str, requirement_id: str | None) -> bytes:
     return (header + body).replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
 
 
+def _safe_requirement_id(requirement_id: str | None) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", requirement_id or "requirement")
+
+
 def download_name(kind: str, requirement_id: str | None, extension: str) -> str:
     """A filename a reviewer can identify without opening it."""
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", requirement_id or "requirement")
-    return f"{safe_id}_{kind}_{stamp}.{extension}"
+    return f"{_safe_requirement_id(requirement_id)}_{kind}_{stamp}.{extension}"
+
+
+def save_generated_artifacts(
+    repo_root: Path,
+    requirement_id: str | None,
+    test_cases: list[TestCase],
+    script: str,
+) -> Path:
+    """Writes the datasheet and the script straight to disk, in a folder
+    named after the requirement ID under the repo root, so a completed
+    generation leaves a reviewable pair of files behind without anyone
+    having to click a download button.
+    """
+    folder = repo_root / _safe_requirement_id(requirement_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "test_cases.xlsx").write_bytes(datasheet_to_xlsx(test_cases))
+    (folder / "test_script.txt").write_bytes(script_to_text(script, requirement_id))
+    return folder

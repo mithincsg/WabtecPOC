@@ -39,7 +39,12 @@ from api.models import (  # noqa: E402
 )
 from api.services import Services  # noqa: E402
 from rag.cache import stable_key  # noqa: E402
-from rag.exporters import datasheet_to_xlsx, download_name, script_to_text  # noqa: E402
+from rag.exporters import (  # noqa: E402
+    datasheet_to_xlsx,
+    download_name,
+    save_generated_artifacts,
+    script_to_text,
+)
 from rag.generator import resolve_folder  # noqa: E402
 from rag.llm_client import LLMConnectionError, LLMResponseError  # noqa: E402
 from rag.prompts import PromptError  # noqa: E402
@@ -312,6 +317,16 @@ async def generate_test_script(request: GenerateScriptRequest) -> GenerateScript
         raise HTTPException(503, str(exc)) from exc
     except PromptError as exc:
         raise HTTPException(500, str(exc)) from exc
+
+    try:
+        saved_to = save_generated_artifacts(
+            REPO_ROOT, result.requirement_id, test_cases, result.script
+        )
+        logger.info("Saved generated test cases and script to %s", saved_to)
+    except OSError:
+        # The generation itself succeeded; a failure to write the local
+        # convenience copy shouldn't turn that into a 500 for the UI.
+        logger.exception("Could not save generated artifacts to disk")
 
     return GenerateScriptResponse(
         requirement_id=result.requirement_id,

@@ -171,14 +171,21 @@ export default function App() {
         refresh,
       })
     );
-    if (generated) setResult(generated);
+    if (generated) {
+      setResult(generated);
+      // The script is written from these rows, so it starts right away
+      // instead of waiting on a separate click — the button below stays,
+      // it just finds the script already there (or on its way).
+      onGenerateScript(generated.test_cases);
+    }
   }
 
-  async function onGenerateScript() {
+  async function onGenerateScript(testCases = result?.test_cases) {
+    if (!testCases?.length) return;
     const generated = await run("script", () =>
       generateTestScript({
         requirementText: composedRequirementText(),
-        testCases: result.test_cases,
+        testCases,
         subdivision,
       })
     );
@@ -416,7 +423,7 @@ export default function App() {
         <button
           className="btn btn-primary"
           disabled={!hasTestCases || generating}
-          onClick={onGenerateScript}
+          onClick={() => onGenerateScript()}
         >
           {busy === "script" ? `Generating script… ${elapsed}s` : "Generate test script"}
         </button>

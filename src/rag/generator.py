@@ -4,14 +4,28 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from string import Template
 
 from .caf_mapping import CafMapping
 from .llm_client import LLMClient
 from .prompts import PromptLibrary
 from .requirement_parser import parse_requirement
 from .keyword_index import KeywordHit
-from .schema import TEST_CASES_JSON_SCHEMA, TestCase, parse_test_cases
+from .schema import TEST_CASES_JSON_SCHEMA, TestCase, TestCaseParseError, parse_test_cases
 from .static_context import StaticContextProvider
+
+
+_SHORTFALL_REMINDER = Template("""
+
+Your previous answer listed these in "coverage" and then wrote no test case
+for them:
+
+$missing
+
+Write one test case per line above, in that order. Return the same JSON
+object, with "coverage" holding exactly those lines and "test_cases" holding
+one case for each. Do not repeat the cases you already wrote.
+""")
 
 logger = logging.getLogger(__name__)
 
@@ -182,12 +196,23 @@ class TestCaseGenerator:
         raw_response = self.llm_client.generate(
             prompt.system, user_prompt, json_schema=TEST_CASES_JSON_SCHEMA
         )
-        test_cases = parse_test_cases(
+        answer = parse_test_cases(
             raw_response,
             requirement_id=parsed.requirement_id or "",
             default_folder=folder,
         )
+        test_cases = answer.test_cases
         logger.info("Parsed %d test case(s) from the LLM response", len(test_cases))
+
+        if len(test_cases) < len(answer.coverage):
+            test_cases += self._write_missing_cases(
+                prompt=prompt,
+                user_prompt=user_prompt,
+                missing=answer.coverage[len(test_cases):],
+                requirement_id=parsed.requirement_id or "",
+                folder=folder,
+                first_s_no=len(test_cases) + 1,
+            )
 
         if folder_source == "caf":
             # The Change Approval Form is the authority on which feature a
@@ -213,6 +238,50 @@ class TestCaseGenerator:
             track_subdivisions=[],
             elapsed_seconds=elapsed,
         )
+
+    def _write_missing_cases(
+        self,
+        *,
+        prompt,
+        user_prompt: str,
+        missing: list[str],
+        requirement_id: str,
+        folder: str,
+        first_s_no: int,
+    ) -> list[TestCase]:
+        """Asks again for the cases the model enumerated but never wrote.
+
+        Nothing in the JSON schema can tie the length of `test_cases` to the
+        length of `coverage` — `]` is a legal token after the first element —
+        so a model that plans six cases and writes one produces a datasheet
+        that is short in a way only the coverage list reveals. The shortfall
+        is the model's own list of what it still owes, so the retry names
+        those lines and asks for one case each, appending them rather than
+        regenerating the rows that were already sound.
+        """
+        logger.warning(
+            "The model planned %d more test case(s) than it wrote; asking for: %s",
+            len(missing),
+            "; ".join(missing),
+        )
+        retry_prompt = user_prompt + _SHORTFALL_REMINDER.substitute(
+            missing="\n".join(f"- {line}" for line in missing)
+        )
+        try:
+            raw = self.llm_client.generate(
+                prompt.system, retry_prompt, json_schema=TEST_CASES_JSON_SCHEMA
+            )
+            recovered = parse_test_cases(
+                raw,
+                requirement_id=requirement_id,
+                default_folder=folder,
+                first_s_no=first_s_no,
+            ).test_cases
+        except (TestCaseParseError, RuntimeError) as exc:
+            logger.warning("Could not recover the missing test case(s): %s", exc)
+            return []
+        logger.info("Recovered %d of %d missing test case(s)", len(recovered), len(missing))
+        return recovered
 
     def resolve_folder(self, requirement_id: str | None) -> tuple[str, str]:
         return resolve_folder(self.caf_mapping, requirement_id)

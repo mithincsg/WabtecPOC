@@ -30,14 +30,19 @@ DATASHEET_COLUMNS: tuple[tuple[str, str], ...] = (
 _TEST_TYPES = ("Positive", "Negative")
 _YES_NO = ("Yes", "No")
 _TRUE_FALSE = ("True", "False")
-# The three the delivered workbooks actually use. This tuple is also the
-# decoder's enum, so a technique missing here is one the model physically
-# cannot emit — "Cause Effect Testing" was named in prompts.yaml but absent
-# from this tuple, so every such case silently normalised to the default.
+# The house techniques. This tuple is also the decoder's enum, so a technique
+# missing here is one the model physically cannot emit — it would silently
+# normalise to the default instead. Keep it in step with the TEST TECHNIQUES
+# section of prompts.yaml, and in that section's label-precedence order, since
+# _choose falls back to a substring match and takes the first option that hits.
 _TEST_TECHNIQUES = (
-    "Equivalence Partitioning",
     "Boundary Value Analysis",
+    "State Transition Testing",
+    "Decision Table Testing",
+    "All Pairs Testing",
+    "Equivalence Partitioning",
     "Cause Effect Testing",
+    "Error Guessing",
 )
 
 
@@ -95,15 +100,22 @@ TEST_CASES_JSON_SCHEMA: dict = {
                 },
                 "required": ["description"],
             },
+            "minItems": 1,
         },
     },
     "required": ["coverage", "test_cases"],
 }
 
 
+@dataclass
+class ParsedTestCases:
+    test_cases: list[TestCase]
+    coverage: list[str]
+
+
 def parse_test_cases(
-    raw_response: str, *, requirement_id: str, default_folder: str = ""
-) -> list[TestCase]:
+    raw_response: str, *, requirement_id: str, default_folder: str = "", first_s_no: int = 1
+) -> ParsedTestCases:
     """Turns the model's JSON into datasheet rows.
 
     Tolerates a code fence or stray prose around the JSON, because instruct
@@ -129,7 +141,7 @@ def parse_test_cases(
             continue
         test_cases.append(
             TestCase(
-                s_no=len(test_cases) + 1,
+                s_no=first_s_no + len(test_cases),
                 requirement=requirement_id,
                 description=description,
                 folder=_clean(item.get("folder")) or default_folder,
@@ -152,17 +164,7 @@ def parse_test_cases(
         for line in (data.get("coverage") or [])
         if isinstance(line, str) and line.strip()
     ]
-    if len(test_cases) < len(coverage):
-        # The model listed what it meant to cover and then wrote fewer cases
-        # than that. Not an error — the rows it did write are sound — but the
-        # shortfall is invisible in the datasheet, so it is named here.
-        logger.warning(
-            "The model planned %d test case(s) but wrote %d. Missing: %s",
-            len(coverage),
-            len(test_cases),
-            "; ".join(coverage[len(test_cases):]),
-        )
-    return test_cases
+    return ParsedTestCases(test_cases=test_cases, coverage=coverage)
 
 
 def _extract_json(raw_response: str) -> dict:

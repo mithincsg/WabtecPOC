@@ -1,0 +1,98 @@
+# Generated test script draft for requirement L2Rnew48
+# Generated 2026-09-22 12:46 UTC — review before execution.
+# This Python file uses the following encoding: utf-8
+# Copyright (c) 2026 Wabtec corporation
+
+from Common.WCR_public import *
+
+
+def main():
+    run_test.set_execution_type("Automation")
+    run_test.set_test_case_function_table({"Positive": "handle_test_case", "Negative": "handle_test_case"})
+    run_test.run()
+
+
+def handle_test_case(data_sheet=None):
+    case = data_sheet["S_no"]
+
+    # Pre-Condition
+    wcr_track.set_track_to_use({"TrackType": "AUX", "subdivID": 8880})
+    wcr_debug_client.log_verification()
+    wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+
+    # Test Scenarios
+    # Test Scenario 1: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    if case == 1:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 19})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # Test Scenario 2: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    elif case == 2:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 1})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # Test Scenario 3: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    elif case == 3:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 20})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # Test Scenario 4: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    elif case == 4:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 0})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # Test Scenario 5: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    elif case == 5:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 21})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # Test Scenario 6: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    elif case == 6:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 1})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # Test Scenario 7: head-end only restricted speed target (any type) at facing signal on non-Canada track
+    elif case == 7:
+        wcr_debug_client.set_tbc({"scac": "UP", "parameter": "TBC137", "value": 20})
+        wcr_loco_sim.set_position({"sub_id": 8880, "track_group": "Main1", "point": 740000, "direction": "INCREASING"})  # 740000(point) is within block 2001 (740000-763130)
+        # 740000(point) is within block 2001 (740000-763130) # subdiv 8880, block 2001 (track data)
+        wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})
+        wcr_ptc.verify_target_details({"expected_result": True, "req_verified": "L2Rnew48"})
+        wcr_debug_client.set_default_tbc({"scac": "UP", "parameter": "TBC137"})
+        wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+    # User Defined Functions
+    # No helper functions needed as all branches are self-contained
+
+if __name__ == "__main__":
+    main()
