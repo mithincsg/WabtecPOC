@@ -137,11 +137,20 @@ class XMLTrackDataExtractor:
         root = ET.fromstring(_sanitized(file_path))
 
         subdivision = _subdivision_id(root, file_path)
+        subdivision_name = _first_text(root, "SubdivisionName")
+        label = f"{subdivision} {subdivision_name}".strip()
+        # The export pads this fixed-width field with trailing spaces
+        # ("UP  "); stripped so it matches the literal value a script must
+        # write (`{"scac": "UP"}`), not a value with invisible padding that
+        # would silently fail equality checks downstream.
+        railroad_scac = _first_text(root, "RailroadSCAC").strip() or None
+
+        track_names = _track_name_lookup(root)
 
         # dict preserves insertion order, so records appear in document order
         # — a block's features stay near the block's own record.
         records: dict[str, list[str]] = {}
-        _collect(root, (), records)
+        _collect(root, (), records, track_names)
 
         units: list[ExtractedUnit] = []
         for index, (record_type, lines) in enumerate(records.items(), start=1):
@@ -160,6 +169,8 @@ class XMLTrackDataExtractor:
                         "table": index,
                         # What the UI's picker filters on.
                         "subdivision": subdivision,
+                        "subdivision_name": subdivision_name or None,
+                        "railroad_scac": railroad_scac,
                     },
                 )
             )
@@ -170,6 +181,7 @@ def _collect(
     element: ET.Element,
     context: tuple[str, ...],
     records: dict[str, list[str]],
+    track_names: dict[str, str],
 ) -> None:
     """Walks the tree, appending one text line per record to its type's list.
 
@@ -192,6 +204,7 @@ def _collect(
             if _is_leaf(grandchild)
         ]
         fields = [(name, value) for name, value in fields if value]
+        fields = _with_track_name(fields, track_names)
 
         if fields:
             prefix = " > ".join(context)
@@ -200,7 +213,7 @@ def _collect(
 
         nested = [grandchild for grandchild in child if not _is_leaf(grandchild)]
         if nested:
-            _collect(child, _extend_context(context, tag, fields), records)
+            _collect(child, _extend_context(context, tag, fields), records, track_names)
 
 
 def _extend_context(
@@ -217,6 +230,56 @@ def _extend_context(
     if not identifier or len(context) >= _MAX_CONTEXT_DEPTH:
         return context
     return context + (f"{tag} {identifier}",)
+
+
+def _with_track_name(
+    fields: list[tuple[str, str]], track_names: dict[str, str]
+) -> list[tuple[str, str]]:
+    """Resolves a record's `TrackValue` code into its `TrackName`, inline.
+
+    `BlockFeature` records carry a bare numeric `TrackValue` (e.g. `13`) and
+    nothing else naming the physical track it runs on — the name lives only
+    in the file's separate `TrackNamesContainer` legend, a record with none of
+    a requirement's wording in it, so a keyword search has nothing to match it
+    on and it goes unretrieved: the block's own chunk then reaches the model
+    with a code and no way to resolve it, e.g. block 13022 was written into a
+    generated script under `TrackValue=13` with no indication that means
+    Siding1, and the script paired it with the wrong track. Resolving the
+    join here, once, at parse time means every block's chunk is
+    self-contained and needs no second record fetched alongside it.
+    """
+    resolved: list[tuple[str, str]] = []
+    already_named = any(name.lower() == "trackname" for name, _ in fields)
+    for name, value in fields:
+        resolved.append((name, value))
+        if name.lower() == "trackvalue" and not already_named:
+            track_name = track_names.get(value)
+            if track_name:
+                resolved.append(("TrackName", track_name))
+    return resolved
+
+
+def _track_name_lookup(root: ET.Element) -> dict[str, str]:
+    """`{TrackValue: TrackName}` for every `TrackNameFeature` in the file.
+
+    Built once per file, before the main walk, so `_collect` can resolve a
+    `BlockFeature`'s `TrackValue` as it emits that record's line rather than
+    leaving the join to whatever later fetches the two records separately.
+    """
+    lookup: dict[str, str] = {}
+    for element in root.iter():
+        if _local(element.tag) != "TrackNameFeature":
+            continue
+        name = value = ""
+        for child in element:
+            child_tag = _local(child.tag)
+            if child_tag == "TrackName":
+                name = _text_of(child)
+            elif child_tag == "TrackValue":
+                value = _text_of(child)
+        if value and name:
+            lookup[value] = name
+    return lookup
 
 
 def _identifier(fields: list[tuple[str, str]]) -> str:

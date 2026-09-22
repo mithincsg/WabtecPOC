@@ -342,10 +342,19 @@ class ChunkMetadata:
     # Track-data only: which subdivision export this chunk came from, so
     # retrieval can be restricted to the track a requirement is tested on.
     subdivision: str | None = None
+    # The subdivision's display name ("Ginger"). Not searched or filtered on —
+    # it is how the UI's subdivision picker labels an otherwise bare five-digit
+    # ID, so it has to survive as metadata rather than only inside section_path.
+    subdivision_name: str | None = None
+    # Track-data only: the subdivision's own real railroad SCAC (`UP`), from
+    # xml_extractor.py's `<RailroadSCAC>` -- an environment fact, not a
+    # search result, so it must survive onto every chunk from that file the
+    # same way subdivision/subdivision_name do.
+    railroad_scac: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        """Flat str/int/float/bool metadata for the BM25 index — drop Nones
-        and the id (carried separately as the chunk's own id).
+    def to_chroma_dict(self) -> dict[str, Any]:
+        """Chroma metadata values must be str/int/float/bool - drop Nones
+        and the id (stored separately as the Chroma document id).
         """
         return {
             k: v
@@ -404,4 +413,6 @@ def build_metadata(
         table_index=locator.get("table"),
         table_title=locator.get("table_title"),
         subdivision=locator.get("subdivision"),
+        subdivision_name=locator.get("subdivision_name"),
+        railroad_scac=locator.get("railroad_scac"),
     )

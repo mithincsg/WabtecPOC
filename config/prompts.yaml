@@ -58,6 +58,20 @@ test_cases:
       stated limit or one step past it in its own unit; a "lower of" /
       "most restrictive of" comparison needs an admissible value on each
       side.
+    - Resolve a parameter identifier (TBC###) to a value everywhere it
+      appears in a case's condition list, not only on the line that case
+      turns on. A bullet inherited unchanged from the requirement's shared
+      condition list still names a real parameter — leaving it as a bare
+      identifier with no number is never acceptable final text. Where the
+      case does not turn on that parameter, resolve it to the same
+      representative value used for the requirement's positive-path case
+      (a value inside its valid range, or its common value where the
+      record gives one); do not vary it case to case. Resolve each side of
+      a comparison independently: a side backed by a parameter record gets
+      a number from that record, a side with no record of its own (e.g. a
+      derived or track-side value) stays worded per the rule above and its
+      gap is named in "comments" — one side lacking a source never excuses
+      leaving the other side, which does have one, unresolved.
     - Never carry a value across from where it does not belong: a track
       speed is not a parameter value, one parameter's default is not
       another's, and a value that fit another requirement does not fit
@@ -268,6 +282,22 @@ test_script:
     - Do not invent API calls, rename their keyword arguments, or invent a
       parameter, message, event, block or milepost that no context block
       contains.
+    - Every `wcr_track.set_track_to_use(...)` call includes a `subdivID` key
+      set to this requirement's subdivision, even where `TrackType` is
+      `'AUX'` rather than `'AUX_POOL'`. The API docstring calls `subdivID`
+      required only for `'AUX_POOL'`, but every real reference script
+      includes it regardless of `TrackType` — follow the house convention,
+      not the bare API minimum.
+    - `track_group`/`sub_folder` is a real track name from that
+      subdivision's own TrackNameFeature legend in the track-data context
+      (e.g. `Main1`, `Main2`, `Siding`, `Spur`) — the value a BlockFeature
+      record's own resolved `TrackName` field states. It is never the
+      subdivision's display name (the `SubdivisionName` field, e.g.
+      "Ginger" for subdivision 8101): that field identifies which
+      subdivision this is, not which track within it, and looks similar
+      enough in the context block to be picked by mistake. If the
+      track-data context does not show a TrackNameFeature record for this
+      subdivision, do not guess one — use the None/`# TODO:` pattern below.
     - Every concrete value you do write must be traceable to the track-data
       or parameter context. Put a short trailing comment on the line naming
       where it came from, e.g. `# subdiv <id>, block <id> (track data)` or
@@ -276,6 +306,12 @@ test_script:
       contains no TBC/CFG/THE identifier and no set_tbc/set_default_tbc
       call at all. Write only the parameter identifiers that block lists —
       never a neighbouring or sequential one.
+    - On every `wcr_loco_sim.set_position(...)` call, the `point` value gets
+      its own trailing comment naming the block it falls inside and that
+      block's milepost range, read from the same BlockFeature record the
+      point came from, e.g. `# 385000(point) is within block 13022
+      (380000-390000)`. This is in addition to the general traceability
+      comment above, not a replacement for it.
     - Where a value is not derivable from those two blocks, do not guess and
       do not borrow: declare a clearly named variable at the top of the
       branch, assign `None`, and leave a `# TODO:` comment naming exactly
