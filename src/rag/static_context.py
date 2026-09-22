@@ -192,13 +192,13 @@ class StaticContextProvider:
         return _format_hits(self.parameter_hits(query, top_k))
 
     def parameter_hits(self, query: str, top_k: int) -> list[KeywordHit]:
-        """TBC/CFG/THE records from the parameter configuration guide.
+        """TBC/CFG/THE records from the parameter configuration guide, looked
+        up by the identifiers the requirement states.
 
-        Exact lookup first, keyword search only as a fallback. A requirement
-        that names its parameters (TBC137, CFG16) has stated its own scope,
-        so those records are the whole answer and `top_k` does not apply to
-        them. Only a requirement that names none falls back to BM25, which
-        still ranks an exact identifier well.
+        Exact lookup is the whole of it: a requirement that names TBC137 or
+        CFG16 has stated its own scope, so those records are the answer and
+        `top_k` does not apply. A requirement that names none gets no
+        records — see below for why there is no keyword fallback.
 
         Returned as raw hits, not just the formatted block, so a caller can
         report them as the retrieved context — these are the only chunks
@@ -230,16 +230,20 @@ class StaticContextProvider:
             )
             return named
 
-        hits = self._keyword_index.search(
-            query, top_k, predicate=lambda m: m.get("document_type") == "parameter_config"
-        )
+        # No identifier named, no records. BM25 always returns its top_k, so a
+        # fallback here cannot answer "no parameter applies" — and the guide is
+        # 900 records of one vocabulary ("on-board segment", "train", "track",
+        # "message"), so the ranking is decided by shared boilerplate. On
+        # L2R8289 (bulletin-dataset validation, which turns on no parameter at
+        # all) the top four scored 324/323/319/318 — a 2% spread across four
+        # unrelated records. The prompt then presents that block as the only
+        # source of TBC/CFG/THE values, so the model writes a case around
+        # whichever record the noise returned.
         logger.info(
-            "Static context (parameter_config): %d/%d hit(s) by keyword "
-            "(the requirement names no TBC/CFG/THE identifier)",
-            len(hits),
-            top_k,
+            "Static context (parameter_config): no records "
+            "(the requirement names no TBC/CFG/THE identifier)"
         )
-        return hits
+        return []
 
     def track_context(
         self,

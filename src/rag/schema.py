@@ -70,32 +70,7 @@ class TestCase:
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
-# Handed to the inference server as a decoding constraint, so the response is
-# a JSON object of this shape by construction rather than by the model
-# choosing to obey the prompt. "JSON only" in prompts.yaml is a request that
-# instruct models mostly honour and reasoning models often don't — qwen3 will
-# happily spend its whole output budget narrating its plan in prose, which
-# arrives here as "no JSON object" after minutes of CPU time. Constraining
-# the decoder is what makes the model swappable without re-tuning prompts.
-#
-# Only `description` is required of a case: s_no and requirement are assigned
-# by parse_test_cases, and every other field has a normalised default, so
-# demanding them would only give the model more ways to fail. The enums match
-# the tuples above, which is why they're built from them.
-#
-# `coverage` is a planning field, and it is why it comes first. Nothing
-# obliges a constrained decoder to write more than one array element — `]` is
-# a legal token after the first one — so on the same requirement the same
-# model returned 8 cases, then 10, and the datasheet it was measured against
-# has 11. prompts.yaml asks the model to enumerate the behaviours before
-# writing cases, but with only `test_cases` in the schema it had nowhere to
-# put that list, so the instruction could not be followed and the count was
-# free. Ollama builds its grammar in property order, so a required `coverage`
-# ahead of `test_cases` makes the enumeration the first thing written; the
-# cases then follow a list the model has already committed to. It is not
-# turned into datasheet rows — parse_test_cases only compares the two lengths
-# and warns — because the reviewer's evidence of a short answer is the
-# shortfall itself, not another column.
+
 TEST_CASES_JSON_SCHEMA: dict = {
     "type": "object",
     "properties": {
@@ -215,10 +190,6 @@ def _extract_json(raw_response: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    # The usual cause of a malformed object here is `num_predict` cutting the
-    # response off mid-array. On CPU that response cost minutes, and the test
-    # cases the model *did* finish are perfectly good, so the truncated tail
-    # is dropped and the brackets closed rather than throwing all of it away.
     repaired = _close_truncated_json(block)
     if repaired is not None:
         try:

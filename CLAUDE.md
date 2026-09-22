@@ -256,22 +256,33 @@ into prose, so asking about `TBC137` returns whatever share of a guide page
 the chunk boundary happened to catch, with its neighbours' ranges alongside
 it; one record per parameter returns that parameter.
 
-Retrieval of those records is exact lookup first, BM25 only as a fallback.
-Any TBC/CFG/THE identifier the requirement states is looked up by exact id in
-`static_context.py`, and when the requirement names any, **those records are
-the whole parameter block** — nothing is padded in beside them and
-`static_parameter_top_k` does not apply. BM25 ranks the remaining ~900
-records on shared prose, and the guide is 900 records of the same prose: on
-a work-zone requirement naming TBC290 and CFG22, `TBC412` ("...calculated
-position uncertainty of the leading edge of the train...") scored *above*
-TBC290's own record and filled a padding slot, where `_format_hits` presents
-every record identically and the prompt calls the block the only place a
-value may come from. A parameter the requirement never mentions is not a
-ranking question to be answered less confidently — it is the wrong answer,
-and one the reviewer cannot spot once it is written into a finished case.
-`static_parameter_top_k` still governs the fallback, for a requirement that
-names no identifier at all; the identifier boost below is what makes that
-ranking sound.
+Retrieval of those records is **exact identifier lookup only** — there is no
+BM25 arm. Any TBC/CFG/THE identifier the requirement states is looked up by
+exact id in `static_context.py`, and those records are the whole parameter
+block: nothing is padded in beside them, and `static_parameter_top_k` does
+not apply. **A requirement that names no identifier gets no parameter
+records at all**, and the prompt is told so explicitly, so no parameter
+identifier, value, default or range can reach the datasheet.
+
+Both halves of that are the same defect, found twice. BM25 ranks the ~900
+records on shared prose, and the guide is 900 records of *one* vocabulary
+("on-board segment", "train", "track", "message"): on a work-zone
+requirement naming TBC290 and CFG22, `TBC412` ("...calculated position
+uncertainty of the leading edge of the train...") scored *above* TBC290's
+own record and filled a padding slot. On L2R8289 (bulletin-dataset
+validation, which turns on no parameter at all) the top four scored
+324/323/319/318 — a 2% spread across four unrelated records, and TBC412
+again reached the prompt and was written into a case. BM25 always returns
+its `top_k`, so a fallback cannot express "no parameter applies"; and
+`_format_hits` presents every record identically under a prompt heading
+calling the block the only place a value may come from. A parameter the
+requirement never mentions is not a ranking question to be answered less
+confidently — it is the wrong answer, and one the reviewer cannot spot once
+it is written into a finished case.
+
+Don't reintroduce a keyword fallback here, with or without a score floor: a
+flat 2% spread passes any threshold loose enough to be useful. The
+identifier boost below now only sharpens the API and track passes.
 
 The conversion is a build step, not a request-time parse: nothing reads the
 guide PDF while the app runs. Re-run the script for a new revision, then

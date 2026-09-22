@@ -134,8 +134,8 @@ class TestCaseGenerator:
             else []
         )
         parameter_chunks = [_chunk_from_hit(hit) for hit in parameter_hits]
-        # Same query and predicate as parameter_hits above, so this is a cache
-        # hit against keyword_index's per-query memoisation, not a second scan.
+        # Same identifier lookup as parameter_hits above, formatted for the
+        # prompt — a dict lookup, not a second search.
         parameter_context = (
             self.static_context.parameter_context(parsed.query_text, self.static_parameter_top_k)
             if self.static_context
@@ -144,7 +144,10 @@ class TestCaseGenerator:
         # No track data here: a datasheet description states the behaviour to
         # verify, not the blocks it runs on. Track values are fetched for the
         # script call, which is what hard-codes them.
-        context = parameter_context or "(No parameter records matched this requirement.)"
+        context = parameter_context or (
+            "(No parameter records — the requirement names no TBC/CFG/THE identifier. "
+            "No parameter identifier, value, default or range may appear in any case.)"
+        )
 
         prompt = self.prompts.test_cases
         user_prompt = prompt.render_user(
@@ -287,7 +290,8 @@ class TestScriptGenerator:
             test_cases=_numbered_test_cases(test_cases),
             api_context=api_context or "(No API definitions were retrieved.)",
             track_context=track_context or "(No track data was retrieved.)",
-            parameter_context=parameter_context or "(No parameter records were retrieved.)",
+            parameter_context=parameter_context
+            or "(No parameter records — no TBC/CFG/THE identifier is named. Use none.)",
         )
         logger.info(
             "Context assembled: api=%d chars, track=%d chars, parameter=%d chars; "

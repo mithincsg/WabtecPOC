@@ -188,14 +188,16 @@ test_script:
           # Test Scenarios
           # Test Scenario 1: <the scenario, worded from that datasheet row>
           if case == 1:
-              <setup: wcr_debug_client.set_tbc(...) for parameters this case varies>
+              <setup: wcr_debug_client.set_tbc(...) only for parameters the
+               PARAMETER RECORDS block contains; omit when it is empty>
               <location: wcr_track.set_track_to_use(...), wcr_loco_sim.set_position(...)>
               <state: wcr_state.set_onboard_state({"Next_State": 'ACTIVE'})>
               <stimulus: office message helper call, wayside setup, driving>
               # Output Verification
               <wcr_ptc.verify_target_details({...,"expected_result": True, "req_verified": "<REQ ID>"})>
               # Cleanup Activity
-              <wcr_debug_client.set_default_tbc(...) for each parameter this case set>
+              <wcr_debug_client.set_default_tbc(...) for each parameter this case
+               set with set_tbc; omit when it set none>
               <wcr_state.set_onboard_to_cutout_via_1010_msg()>
 
           # Test Scenario 2: <...>
@@ -268,8 +270,12 @@ test_script:
       contains.
     - Every concrete value you do write must be traceable to the track-data
       or parameter context. Put a short trailing comment on the line naming
-      where it came from, e.g. `# subdiv 08880, block 1015 (track data)` or
-      `# TBC137 default (Parameter Configuration Guide)`.
+      where it came from, e.g. `# subdiv <id>, block <id> (track data)` or
+      `# <identifier> default (Parameter Configuration Guide)`.
+    - When the PARAMETER RECORDS block states there are none, the script
+      contains no TBC/CFG/THE identifier and no set_tbc/set_default_tbc
+      call at all. Write only the parameter identifiers that block lists —
+      never a neighbouring or sequential one.
     - Where a value is not derivable from those two blocks, do not guess and
       do not borrow: declare a clearly named variable at the top of the
       branch, assign `None`, and leave a `# TODO:` comment naming exactly
