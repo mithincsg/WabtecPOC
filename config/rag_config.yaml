@@ -8,6 +8,8 @@ static_api_top_k: 4          # python_apis method/class chunks per request
 static_track_top_k: 4        # track-XML chunks per request (filtered to the
                               # subdivision picked in the UI)
 static_parameter_top_k: 4    # TBC/CFG/THE parameter records per request
+static_icd_top_k: 6          # ICD message-field decodings (Train Type codes,
+                              # enumerations, ranges) per request
 
 
 

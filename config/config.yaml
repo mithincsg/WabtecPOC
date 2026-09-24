@@ -11,6 +11,9 @@ static_sources:
   - path: data/parameter_config
     document_type: parameter_config
     subfolders_as_type: false
+  - path: data/ICD_data
+    document_type: icd
+    subfolders_as_type: false
 
 
 examples_dir: data/Examples

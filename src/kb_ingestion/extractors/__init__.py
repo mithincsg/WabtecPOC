@@ -53,7 +53,8 @@ EXTRACTORS_BY_SUFFIX: dict[str, Extractor] = {
     # and the only track source the app reads.
     ".xml": XMLTrackDataExtractor(),
     # The parameter configuration guide, converted from its PDF by
-    # scripts/convert_parameter_guide.py into one record per parameter.
+    # scripts/convert_parameter_guide.py into one record per parameter, and
+    # the office/locomotive ICD message definitions (data/ICD_data/).
     ".json": ParameterJSONExtractor(),
 }
 

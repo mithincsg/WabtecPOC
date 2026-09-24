@@ -226,6 +226,31 @@ def _index_parameter_records(store: _StaticDocumentStore) -> dict[str, KeywordHi
     return records
 
 
+def _index_icd_fields(store: _StaticDocumentStore) -> list[tuple[re.Pattern[str], list[KeywordHit]]]:
+    """ICD field chunks grouped by field name, each with a pattern matching
+    that name as a requirement or test case writes it: any case, words
+    joined by space, hyphen, underscore or nothing (`train type`,
+    `TrainType`, `head-end only`). Longest names first, so `Head End Only
+    Speed Restriction` is listed ahead of anything it contains.
+    """
+    ids, texts, metadatas = store.get_all_documents()
+    by_name: dict[str, list[KeywordHit]] = {}
+    for chunk_id, text, metadata in zip(ids, texts, metadatas):
+        if (metadata or {}).get("document_type") != "icd":
+            continue
+        name = str(metadata.get("section_path") or "").split(" > ")[-1]
+        words = re.findall(r"[A-Za-z0-9]+", name)
+        if len(words) < 2:
+            continue
+        by_name.setdefault(" ".join(words).lower(), []).append(
+            KeywordHit(chunk_id=chunk_id, text=text, metadata=metadata, score=0.0)
+        )
+    return [
+        (re.compile(r"\b" + r"[\s_-]*".join(map(re.escape, name.split())) + r"\b", re.IGNORECASE), hits)
+        for name, hits in sorted(by_name.items(), key=lambda item: -len(item[0]))
+    ]
+
+
 def _index_api_records(store: _StaticDocumentStore) -> dict[tuple[str, str], KeywordHit]:
     """`python_apis` chunks by `(class name, method name)`, for the core and
     triggered methods to fetch directly instead of via keyword search.
@@ -500,6 +525,7 @@ class StaticContextProvider:
         self._track_groups = _track_groups_by_subdivision(store)
         self._block_ranges = _block_ranges_by_subdivision(store)
         self._parameter_records = _index_parameter_records(store)
+        self._icd_fields = _index_icd_fields(store)
         self._api_records = _index_api_records(store)
         self._instance_to_class = _declared_instances(_python_apis_source_paths(ingestion_config))
         self._api_call_re = _build_api_call_regex(self._instance_to_class.keys())
@@ -676,6 +702,34 @@ class StaticContextProvider:
             "(the requirement names no TBC/CFG/THE identifier)"
         )
         return []
+
+    def icd_context(self, query: str, top_k: int) -> str:
+        """Decoded ICD message fields the requirement names -- what
+        `Train Type=1` or `Restricted Speed=1` means -- formatted for a
+        prompt.
+
+        Looked up by field name, not ranked. The field names are a closed
+        vocabulary, and BM25 over requirement prose loses them the same way
+        it lost TBC identifiers: a work-zone requirement repeating "speed" and
+        "restriction" ranked Head End PTC Subdivision ID above Train Type,
+        which it named. Only multi-word names are matched, so a bare "Speed"
+        or "Direction" field never rides in on ordinary wording. `top_k` is a
+        ceiling.
+        """
+        if top_k <= 0:
+            return ""
+        hits = [
+            hit
+            for pattern, field_hits in self._icd_fields
+            if pattern.search(query or "")
+            for hit in field_hits
+        ][:top_k]
+        logger.info(
+            "Static context (icd): %d field record(s) named in the requirement (%s)",
+            len(hits),
+            ", ".join(sorted({h.metadata.get("section_path", "").split(" > ")[-1] for h in hits})) or "none",
+        )
+        return _format_hits(hits)
 
     def track_context(
         self,

@@ -100,11 +100,8 @@ class ScriptResult:
 
 
 class TestCaseGenerator:
-    """requirement -> understanding -> parameter-config context -> LLM ->
-    datasheet rows.
-
-    Its only context is the parameter configuration guide's records (see
-    `generate`).
+    """requirement -> understanding -> parameter-config, ICD and track
+    context -> LLM -> datasheet rows.
     """
 
     def __init__(
@@ -113,12 +110,16 @@ class TestCaseGenerator:
         prompts: PromptLibrary,
         static_context: StaticContextProvider | None = None,
         static_parameter_top_k: int = 6,
+        static_track_top_k: int = 4,
+        static_icd_top_k: int = 6,
         caf_mapping: CafMapping | None = None,
     ):
         self.llm_client = llm_client
         self.prompts = prompts
         self.static_context = static_context
         self.static_parameter_top_k = static_parameter_top_k
+        self.static_track_top_k = static_track_top_k
+        self.static_icd_top_k = static_icd_top_k
         self.caf_mapping = caf_mapping
 
     def generate(
@@ -134,16 +135,14 @@ class TestCaseGenerator:
         `max_test_cases` is only a ceiling, so a sprawling requirement cannot
         ask for a response longer than the model's output budget.
 
-        `subdivision` is accepted so the caller can send the same request
-        shape as the script call, but no track data reaches this generation:
-        a datasheet row describes a behaviour to verify, not the blocks it
-        runs on.
-
-        Context comes from the parameter configuration guide's records
-        (`data/parameter_config/`) and nothing else. The parameter a
-        requirement names is
-        the thing its test cases assert against, and its valid range is what
-        a boundary case is written from, so the records are what a row needs.
+        Context is the parameter configuration guide's records
+        (`data/parameter_config/`) plus track data for `subdivision`, the one
+        picked in the UI -- the same track pass the script call runs, so the
+        blocks and track features a case names are the ones its script will
+        hard-code. No subdivision means no track data. ICD field decodings
+        give the meaning of every coded value a case sets (`Train Type=1`
+        is Freight), so the code and its meaning come from the ICD rather
+        than the model's guess.
         """
         started = time.monotonic()
         parsed = parse_requirement(requirement_text)
@@ -168,9 +167,18 @@ class TestCaseGenerator:
             if self.static_context
             else ""
         )
-        # No track data here: a datasheet description states the behaviour to
-        # verify, not the blocks it runs on. Track values are fetched for the
-        # script call, which is what hard-codes them.
+        track_context, track_subdivisions = (
+            self.static_context.track_context_for(
+                parsed.query_text, self.static_track_top_k, subdivision
+            )
+            if self.static_context
+            else ("", ())
+        )
+        icd_context = (
+            self.static_context.icd_context(parsed.query_text, self.static_icd_top_k)
+            if self.static_context
+            else ""
+        )
         context = parameter_context or (
             "(No parameter records — the requirement names no TBC/CFG/THE identifier. "
             "No parameter identifier, value, default or range may appear in any case.)"
@@ -181,17 +189,25 @@ class TestCaseGenerator:
             requirement_id=parsed.requirement_id or "(not stated)",
             requirement_text=parsed.raw_text.strip(),
             context=context,
+            track_context=track_context
+            or "(No track data — no subdivision picked. No block, milepost, signal or switch may appear in any case.)",
+            icd_context=icd_context
+            or "(No ICD fields — the requirement names none. Write no numeric code for any coded input; state it in words.)",
             max_test_cases=str(max_test_cases),
             folder_hint=_folder_hint(folder),
             columns=", ".join(label for _, label in _column_labels()),
         )
         logger.info(
-            "Context assembled: %d chars (parameter records only); "
+            "Context assembled: parameter=%d chars, track=%d chars, icd=%d chars; "
             "sending %d-char prompt to the datasheet LLM call",
-            len(context),
+            len(parameter_context),
+            len(track_context),
+            len(icd_context),
             len(user_prompt),
         )
         _log_context_block("parameter records", parameter_context)
+        _log_context_block("track_data", track_context)
+        _log_context_block("icd", icd_context)
 
         raw_response = self.llm_client.generate(
             prompt.system, user_prompt, json_schema=TEST_CASES_JSON_SCHEMA
@@ -234,8 +250,7 @@ class TestCaseGenerator:
             test_cases=test_cases,
             retrieved_chunks=parameter_chunks,
             raw_response=raw_response,
-            # Always empty: no track data is searched for a datasheet.
-            track_subdivisions=[],
+            track_subdivisions=list(track_subdivisions),
             elapsed_seconds=elapsed,
         )
 
@@ -308,6 +323,7 @@ class TestScriptGenerator:
         static_api_top_k: int = 4,
         static_track_top_k: int = 4,
         static_parameter_top_k: int = 6,
+        static_icd_top_k: int = 6,
     ):
         self.llm_client = llm_client
         self.prompts = prompts
@@ -316,6 +332,7 @@ class TestScriptGenerator:
         self.static_api_top_k = static_api_top_k
         self.static_track_top_k = static_track_top_k
         self.static_parameter_top_k = static_parameter_top_k
+        self.static_icd_top_k = static_icd_top_k
 
     def generate(
         self,
@@ -364,6 +381,11 @@ class TestScriptGenerator:
             if self.static_context
             else ""
         )
+        icd_context = (
+            self.static_context.icd_context(query, self.static_icd_top_k)
+            if self.static_context
+            else ""
+        )
 
         prompt = self.prompts.test_script
         user_prompt = prompt.render_user(
@@ -374,18 +396,21 @@ class TestScriptGenerator:
             track_context=track_context or "(No track data was retrieved.)",
             parameter_context=parameter_context
             or "(No parameter records — no TBC/CFG/THE identifier is named. Use none.)",
+            icd_context=icd_context or "(No ICD fields — none named. Use no numeric field code.)",
         )
         logger.info(
-            "Context assembled: api=%d chars, track=%d chars, parameter=%d chars; "
-            "sending %d-char prompt to the script LLM call",
+            "Context assembled: api=%d chars, track=%d chars, parameter=%d chars, "
+            "icd=%d chars; sending %d-char prompt to the script LLM call",
             len(api_context),
             len(track_context),
             len(parameter_context),
+            len(icd_context),
             len(user_prompt),
         )
         _log_context_block("python_apis", api_context)
         _log_context_block("track_data", track_context)
         _log_context_block("parameter records", parameter_context)
+        _log_context_block("icd", icd_context)
 
         raw = self.llm_client.generate(
             prompt.system,

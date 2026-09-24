@@ -58,6 +58,13 @@ test_cases:
       stated limit or one step past it in its own unit; a "lower of" /
       "most restrictive of" comparison needs an admissible value on each
       side.
+    - Take every block, milepost, signal, switch or track feature a case
+      names from the track data, and only where the case turns on it. Never
+      name track from another subdivision.
+    - Write every coded input (train type, bulletin type, flag, direction,
+      status) as `<field>=<code> (<meaning>)`, code and meaning from the
+      ICD fields block. A code that block does not list is never written;
+      state the input in words instead.
     - Never carry a value across from where it does not belong: a track
       speed is not a parameter value, one parameter's default is not
       another's, and a value that fit another requirement does not fit
@@ -218,6 +225,12 @@ test_cases:
     Parameter records:
     $context
 
+    Track data (the picked subdivision only):
+    $track_context
+
+    ICD fields (message field codes and their meanings):
+    $icd_context
+
     List every case this requirement needs in "coverage" first, by the
     rules in your instructions, then write one test case per line of it.
     As a safety limit only, do not exceed $max_test_cases test cases in
@@ -330,6 +343,9 @@ test_script:
       the records shown there for this requirement's subdivision.
     - Parameter names and values (TBC###), configuration defaults, limits
       and units -> the parameter-records context.
+    - Message field codes (train type, bulletin type, flags, directions)
+      -> the ICD-fields context. Comment each with its meaning, e.g.
+      `# 1 = <meaning> (ICD <msg id>)`.
 
     Rules:
     - Never emit a subdivision, block, milepost, switch, signal or TBC
@@ -415,6 +431,10 @@ test_script:
     === PARAMETER RECORDS — the only source of TBC/CFG/THE values,
     defaults, limits and units ===
     $parameter_context
+
+    === ICD FIELDS — the only source of message field codes and their
+    meanings ===
+    $icd_context
 
     Write the complete automation script for this requirement, in the house
     skeleton from your instructions. Before each concrete value, satisfy

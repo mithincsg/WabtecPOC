@@ -89,6 +89,8 @@ class Services:
                         prompts=self.prompts,
                         static_context=self.static_context,
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
+                        static_track_top_k=self.settings.retrieval.static_track_top_k,
+                        static_icd_top_k=self.settings.retrieval.static_icd_top_k,
                         caf_mapping=self.caf_mapping,
                     )
         return self._test_case_generator
@@ -106,6 +108,7 @@ class Services:
                         static_api_top_k=self.settings.retrieval.static_api_top_k,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
+                        static_icd_top_k=self.settings.retrieval.static_icd_top_k,
                     )
         return self._script_generator
 

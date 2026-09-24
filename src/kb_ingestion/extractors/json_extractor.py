@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from . import ExtractedUnit
+from .icd_extractor import icd_units
 
 # Rendered first and in this order, so the identifier and the title lead the
 # chunk and the values a test case needs follow in a stable place. Anything
@@ -66,6 +67,10 @@ class ParameterJSONExtractor:
 
     def extract(self, file_path: Path) -> list[ExtractedUnit]:
         payload = json.loads(file_path.read_text(encoding="utf-8"))
+        # data/ICD_data/icd_messages.json is a bare list of ICD messages; the
+        # parameter guide is an object holding "parameters".
+        if isinstance(payload, list):
+            return icd_units(payload)
         records = payload.get("parameters") or []
 
         units = []

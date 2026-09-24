@@ -11,6 +11,7 @@ automation script draft (`.txt`), grounded in existing documents:
 data/python_apis/       .py/.pyi   ──(ast)──┐
 data/track_data/<subdiv>/  -subdiv.xml  ──(ElementTree)──┤
 data/parameter_config/  .json   ──(one record per TBC/CFG/THE)──┤
+data/ICD_data/          .json   ──(one record per decoded message field)──┤
                                                                 │
                             chunking (structure-aware) → one in-process
                                                           BM25 index
@@ -192,12 +193,14 @@ intended state, not a gap — a picker showing a name for some subdivisions and
 a number for others would read as missing data. `Subdivision` in
 `static_context.py` therefore carries `id` and `chunks` and nothing else.
 
-Track data reaches **only** the script call. A datasheet description states
-the behaviour to verify, not the blocks it runs on, so test-case generation
-sends nothing from `track_data/` (its `track_subdivisions` in the response
-is always empty).
+Track data reaches **both** calls. Test-case generation runs the same
+track pass as the script call (`track_context_for`, `static_track_top_k`,
+query = the requirement), so a case that turns on a block, signal or switch
+names a real one from the picked subdivision, and the script later
+hard-codes the same track. `track_subdivisions` in the datasheet response
+reports which subdivision was searched.
 
-Which subdivision the script call searches is decided by **one** thing: the
+Which subdivision each call searches is decided by **one** thing: the
 subdivision picked in the UI (`subdivision` on the generate requests,
 `GET /api/track-subdivisions` for the list).
 
@@ -255,6 +258,27 @@ asserts against and a boundary case is written from. Left as a PDF it chunks
 into prose, so asking about `TBC137` returns whatever share of a guide page
 the chunk boundary happened to catch, with its neighbours' ranges alongside
 it; one record per parameter returns that parameter.
+
+`ICD_data/icd_messages.json` holds the office/locomotive ICD message
+definitions (WEG-ICD-11097). `extractors/icd_extractor.py` (routed from
+`json_extractor.py` because the file is a bare list, not a `parameters`
+object) makes one chunk per field that carries a decoding: an enumeration,
+range, unit or encoding. Codes are rendered as `Train Type=1 (Freight)`,
+which is the form a test case is told to write. A field decoded identically
+in several messages becomes one chunk naming all of them. Two things are
+left out on purpose. The first is the metric twin of each message listed
+twice: its higher version states speeds in km/h, which is the Canadian
+variant. The second is the design notes, because the long ones quote a
+dozen fields each and outranked the field names.
+
+ICD retrieval (`icd_context`) is **field-name lookup, not ranking**, for the
+same reason as parameters. On a work-zone requirement, BM25 ranked Head End
+PTC Subdivision ID above Train Type, which the requirement named. Every
+multi-word field name the requirement or test cases contain (`train type`,
+`TrainType`, `train-type`) pulls that field's chunks.
+`static_icd_top_k` is a ceiling. Single-word names (`Speed`, `Direction`)
+are not matched. Both generations get this block, and the prompts require
+every coded input to be written `<field>=<code> (<meaning>)` from it.
 
 Retrieval of those records is **exact identifier lookup only** — there is no
 BM25 arm. Any TBC/CFG/THE identifier the requirement states is looked up by
@@ -606,12 +630,13 @@ data/knowledge_base/         source PDFs for the converter scripts; NOT read at 
 data/python_apis/            PY · PYI (indexed)
 data/track_data/<subdiv>/    <subdiv>-subdiv.xml (indexed)
 data/parameter_config/       parameter records (indexed); generated, not hand-edited
+data/ICD_data/               icd_messages.json, ICD message field decodings (indexed)
 data/Examples/               reference triples; design-time source for the prompts.yaml templates, not read at request time
 data/CAF.xlsx                requirement -> feature (Folder) source; converted, not read at request time
 scripts/convert_caf_mapping.py   data/CAF.xlsx -> config/caf_mapping.json
 scripts/convert_parameter_guide.py  guide PDF -> data/parameter_config/
 src/kb_ingestion/
-  extractors/                 one parser per format (python, xml, json; pdf/xlsx/text kept, unused)
+  extractors/                 one parser per format (python, xml, json + icd; pdf/xlsx/text kept, unused)
   chunking.py                 normalisation, token budgets, chunk metadata
   pipeline.py                   discover -> extract -> chunk, in memory
 src/rag/
