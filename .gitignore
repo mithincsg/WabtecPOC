@@ -27,3 +27,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Generated test-case datasheets and automation scripts
+Generated/

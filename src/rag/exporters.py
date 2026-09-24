@@ -133,11 +133,15 @@ def save_generated_artifacts(
     script: str,
 ) -> Path:
     """Writes the datasheet and the script straight to disk, in a folder
-    named after the requirement ID under the repo root, so a completed
-    generation leaves a reviewable pair of files behind without anyone
-    having to click a download button.
+    named after the requirement ID and feature under the repo root's
+    Generated/ directory, so a completed generation leaves a reviewable
+    pair of files behind without anyone having to click a download button.
     """
-    folder = repo_root / _safe_requirement_id(requirement_id)
+    feature = next((tc.folder for tc in test_cases if tc.folder), "")
+    folder_name = _safe_requirement_id(requirement_id)
+    if feature:
+        folder_name = f"{folder_name}_{_safe_requirement_id(feature)}"
+    folder = repo_root / "Generated" / folder_name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "test_cases.xlsx").write_bytes(datasheet_to_xlsx(test_cases))
     (folder / "test_script.txt").write_bytes(script_to_text(script, requirement_id))
