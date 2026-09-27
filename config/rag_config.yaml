@@ -4,12 +4,18 @@
 # there is no dense arm and no vector store, so these are match counts, not
 # fused-ranking ones.
 
-static_api_top_k: 4          # python_apis method/class chunks per request
-static_track_top_k: 4        # track-XML chunks per request (filtered to the
+static_api_top_k: 20         # python_apis method/class chunks per request.
+
+static_track_top_k: 2        # track-XML chunks per request (filtered to the
                               # subdivision picked in the UI)
 static_parameter_top_k: 4    # TBC/CFG/THE parameter records per request
-static_icd_top_k: 6          # ICD message-field decodings (Train Type codes,
+static_icd_top_k: 2          # ICD message-field decodings (Train Type codes,
                               # enumerations, ranges) per request
+static_message_object_top_k: 2   # office-message objects (script call only) --
+                              # the message(s) a requirement's own wording
+                              # identifies (e.g. wcr_office_01041 for a
+                              # "work zone" bulletin requirement), each sent
+                              # as a full, object-qualified method listing
 
 
 

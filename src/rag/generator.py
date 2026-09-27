@@ -324,6 +324,7 @@ class TestScriptGenerator:
         static_track_top_k: int = 4,
         static_parameter_top_k: int = 6,
         static_icd_top_k: int = 6,
+        static_message_object_top_k: int = 2,
     ):
         self.llm_client = llm_client
         self.prompts = prompts
@@ -333,6 +334,7 @@ class TestScriptGenerator:
         self.static_track_top_k = static_track_top_k
         self.static_parameter_top_k = static_parameter_top_k
         self.static_icd_top_k = static_icd_top_k
+        self.static_message_object_top_k = static_message_object_top_k
 
     def generate(
         self,
@@ -357,8 +359,22 @@ class TestScriptGenerator:
         # determine which API calls and which reference script are relevant.
         query = "\n".join([parsed.query_text, *(tc.description for tc in test_cases)])
 
+        # Which office message(s) this requirement is about, read off the
+        # requirement's own wording via ICD field/message-name terms -- see
+        # message_object_hits. Fetched before the general API pass so that
+        # pass can skip re-documenting the same class via keyword search.
+        message_objects = (
+            self.static_context.message_object_hits(query, self.static_message_object_top_k)
+            if self.static_context
+            else []
+        )
+        message_object_context = (
+            self.static_context.message_object_context(message_objects) if self.static_context else ""
+        )
+        message_object_classes = frozenset(class_name for _, class_name, _ in message_objects)
+
         api_context = (
-            self.static_context.api_context(query, self.static_api_top_k)
+            self.static_context.api_context(query, self.static_api_top_k, message_object_classes)
             if self.static_context
             else ""
         )
@@ -392,6 +408,8 @@ class TestScriptGenerator:
             requirement_id=parsed.requirement_id or "(not stated)",
             requirement_text=parsed.raw_text.strip(),
             test_cases=_numbered_test_cases(test_cases),
+            message_object_context=message_object_context
+            or "(No office message object matched this requirement.)",
             api_context=api_context or "(No API definitions were retrieved.)",
             track_context=track_context or "(No track data was retrieved.)",
             parameter_context=parameter_context
@@ -399,14 +417,16 @@ class TestScriptGenerator:
             icd_context=icd_context or "(No ICD fields — none named. Use no numeric field code.)",
         )
         logger.info(
-            "Context assembled: api=%d chars, track=%d chars, parameter=%d chars, "
-            "icd=%d chars; sending %d-char prompt to the script LLM call",
+            "Context assembled: message_objects=%d chars, api=%d chars, track=%d chars, "
+            "parameter=%d chars, icd=%d chars; sending %d-char prompt to the script LLM call",
+            len(message_object_context),
             len(api_context),
             len(track_context),
             len(parameter_context),
             len(icd_context),
             len(user_prompt),
         )
+        _log_context_block("message objects", message_object_context)
         _log_context_block("python_apis", api_context)
         _log_context_block("track_data", track_context)
         _log_context_block("parameter records", parameter_context)

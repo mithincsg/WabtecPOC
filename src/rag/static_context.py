@@ -251,6 +251,135 @@ def _index_icd_fields(store: _StaticDocumentStore) -> list[tuple[re.Pattern[str]
     ]
 
 
+# The first line every icd_field chunk is rendered with (see
+# `icd_extractor.icd_units`): the field name, then every message it decodes
+# identically in, as `"<msg_id> <message name>"` entries joined by `"; "`.
+_ICD_HEADER_RE = re.compile(r"^ICD field (.+?) \(message (.+)\)$")
+
+
+def _message_instances_by_id(instance_to_class: dict[str, str]) -> dict[str, str]:
+    """`{msg id: declared instance}` for every `wcr_office_<id>` /
+    `wcr_ivoc_office_<id>` object `data/python_apis` declares -- the office
+    messages a script can actually send, as opposed to every message the ICD
+    happens to define (`icd_messages.json` also carries locomotive-side and
+    file-transfer messages no office object sends).
+    """
+    return {
+        instance.rsplit("_", 1)[-1]: instance
+        for instance in instance_to_class
+        if instance.startswith(("wcr_office_", "wcr_ivoc_office_"))
+    }
+
+
+def _index_message_terms(
+    store: _StaticDocumentStore, sendable_msg_ids: set[str]
+) -> tuple[dict[str, list[tuple[re.Pattern[str], str]]], dict[str, str]]:
+    """`{msg id: [(pattern, matched term), ...]}` for every office message a
+    script can send -- built off the same icd_field chunks `_index_icd_fields`
+    groups by field name, so no source is read twice.
+
+    A term is the message's own name, one of its multi-word field names, or
+    one of its enumeration meanings (e.g. "Work zone", the Bulletin Type
+    value that names the 01041 message a work-zone requirement needs) --
+    exactly the vocabulary a requirement uses to talk about a message
+    without ever writing its ICD number. Single-word names are left out for
+    the same reason `_index_icd_fields` leaves them out: too common to be a
+    reliable signal. A term shared by more than a handful of messages (a
+    generic enumeration value like "Not used" or "Reserved") is dropped too
+    -- it would select every message that has it, which is no selection at
+    all.
+
+    Alongside the term index, also returns `{term: "<field>=<code> (<term>)"}`
+    for every term that came from an enumeration value -- e.g. "work zone"
+    -> "Bulletin Type=6 (Work zone)". A term alone tells the model which
+    object matched, not which value to pass its setter: a real generation
+    matched "work zone" to 01041, correctly called `set_type`, and then
+    still invented a wrong method name (`set_bulletin_type`, which belongs
+    to a different class) and a wrong-cased value (`"WORK_ZONE"`) for it --
+    the exact ICD field/code/meaning that matched was known at retrieval
+    time but never reached the object card. `message_object_hits` looks
+    this hint up so the card can state the real value instead.
+    """
+    ids, texts, metadatas = store.get_all_documents()
+    term_msg_ids: dict[str, set[str]] = {}
+    term_hint: dict[str, str] = {}
+    msg_names: dict[str, str] = {}
+    for text, metadata in zip(texts, metadatas):
+        if (metadata or {}).get("document_type") != "icd":
+            continue
+        first_line = text.strip().splitlines()[0] if text.strip() else ""
+        header = _ICD_HEADER_RE.match(first_line)
+        if not header:
+            continue
+        field_name, message_list = header.groups()
+        msg_ids_here = []
+        for entry in message_list.split("; "):
+            msg_id, _, name = entry.partition(" ")
+            if msg_id not in sendable_msg_ids:
+                continue
+            msg_ids_here.append(msg_id)
+            msg_names.setdefault(msg_id, name)
+        if not msg_ids_here:
+            continue
+
+        terms = {field_name} if len(field_name.split()) >= 2 else set()
+        for line in text.splitlines()[1:]:
+            enum_match = re.match(rf"^{re.escape(field_name)}=(\S+) \((.+)\)$", line)
+            if enum_match:
+                code, meaning = enum_match.groups()
+                if len(meaning.split()) >= 2:
+                    terms.add(meaning)
+                    term_hint.setdefault(meaning.lower(), f"{field_name}={code} ({meaning})")
+        for term in terms:
+            term_msg_ids.setdefault(term.lower(), set()).update(msg_ids_here)
+
+    for msg_id, name in msg_names.items():
+        if len(name.split()) >= 2:
+            term_msg_ids.setdefault(name.lower(), set()).add(msg_id)
+
+    by_msg: dict[str, list[tuple[re.Pattern[str], str]]] = {}
+    for term_lower, msg_ids in term_msg_ids.items():
+        if len(msg_ids) > 3:
+            continue
+        pattern = re.compile(
+            r"\b" + r"[\s_-]*".join(map(re.escape, term_lower.split())) + r"\b", re.IGNORECASE
+        )
+        for msg_id in msg_ids:
+            by_msg.setdefault(msg_id, []).append((pattern, term_lower))
+    return by_msg, term_hint
+
+
+def _method_signature(method_source: str, instance: str) -> tuple[str, str, list[str]]:
+    """`(<instance>.<method>(...) signature, docstring's first line, dict
+    keys the docstring documents)` off one method chunk's real source --
+    for rendering a compact, object-qualified line instead of sending the
+    whole method body.
+    """
+    lines = method_source.splitlines()
+    def_line = next((line.strip() for line in lines if line.strip().startswith("def ")), "")
+    def_line = def_line.rstrip(":")
+    signature = re.sub(rf"^def\s+(\w+)\(self,?\s*", rf"{instance}.\1(", def_line, count=1)
+
+    doc_lines: list[str] = []
+    in_docstring = False
+    for line in lines:
+        stripped = line.strip()
+        if not in_docstring:
+            if stripped.startswith(('"""', "'''")):
+                in_docstring = True
+                stripped = stripped.strip("\"'")
+                if stripped:
+                    doc_lines.append(stripped)
+            continue
+        if stripped.endswith(('"""', "'''")):
+            break
+        if stripped:
+            doc_lines.append(stripped)
+    summary = doc_lines[0] if doc_lines else ""
+    keys = sorted(set(re.findall(r"'(\w+)'\s*:", method_source)))
+    return signature, summary, keys
+
+
 def _index_api_records(store: _StaticDocumentStore) -> dict[tuple[str, str], KeywordHit]:
     """`python_apis` chunks by `(class name, method name)`, for the core and
     triggered methods to fetch directly instead of via keyword search.
@@ -532,6 +661,10 @@ class StaticContextProvider:
         self._core_api_methods = _discover_core_api_methods(
             ingestion_config.examples_dir, self._api_call_re, self._instance_to_class
         )
+        self._message_instance = _message_instances_by_id(self._instance_to_class)
+        self._message_terms, self._message_term_hints = _index_message_terms(
+            store, set(self._message_instance)
+        )
 
     def api_call_names(self, script_text: str) -> set[str]:
         """Every real API method called in `script_text`, by bare name --
@@ -547,14 +680,23 @@ class StaticContextProvider:
         """Every real API call in `script_text`, as `(class, method)` pairs."""
         return resolved_api_calls(script_text, self._api_call_re, self._instance_to_class)
 
-    def api_context(self, query: str, top_k: int) -> str:
+    def api_context(
+        self, query: str, top_k: int, exclude_classes: frozenset[str] = frozenset()
+    ) -> str:
         """WCR test-automation API documentation for the script call, formatted
         for a prompt. See `api_hits` for the records themselves.
         """
-        return _format_hits(self.api_hits(query, top_k))
+        return _format_hits(self.api_hits(query, top_k, exclude_classes))
 
-    def api_hits(self, query: str, top_k: int) -> list[KeywordHit]:
+    def api_hits(
+        self, query: str, top_k: int, exclude_classes: frozenset[str] = frozenset()
+    ) -> list[KeywordHit]:
         """WCR test-automation API documentation for the script call.
+
+        `exclude_classes` leaves out a class already covered by a
+        `message_object_hits` card -- that card already lists every one of
+        its methods, so a keyword-search slot spent repeating one of them
+        here would be a wasted slot, not a second copy worth having.
 
         `self._core_api_methods` (discovered from real reference scripts by
         `_discover_core_api_methods`, not a hand-maintained list) are
@@ -590,6 +732,7 @@ class StaticContextProvider:
                 predicate=lambda m: (
                     m.get("document_type") == "python_apis"
                     and (m.get("class_name"), m.get("method_name")) not in included
+                    and m.get("class_name") not in exclude_classes
                 ),
             )
             for hit in hits:
@@ -606,6 +749,91 @@ class StaticContextProvider:
             top_k,
         )
         return list(included.values())
+
+    def message_object_hits(self, query: str, top_k: int) -> list[tuple[str, str, list[str]]]:
+        """`[(declared instance, class, matched terms)]` for the office
+        message(s) this requirement's own wording identifies -- see
+        `_index_message_terms` for what counts as a term -- ranked by how
+        many distinct terms matched, most first.
+
+        Exact term matching, not keyword ranking: aggregating BM25 scores
+        per class was tried and is unreliable here (on one reference
+        requirement it ranked an unrelated office class first), the same
+        way plain keyword search cannot be trusted to surface a named
+        TBC/CFG/THE identifier (see `parameter_hits`).
+
+        A single matched term is not kept, even though `_index_message_terms`
+        already requires it to be multi-word and rare: verified against
+        `data/Examples`, a signal-target requirement having nothing to do
+        with any office message matched 01041 on "restricted speed" alone --
+        that phrase names a signal-target category there, not the Bulletin
+        Dataset field it names in ICD terms. Every genuine match found in
+        that same verification cleared two or more independent terms, so
+        requiring corroboration from a second term is a real bar, not an
+        arbitrary one.
+        """
+        if top_k <= 0:
+            return []
+        scored: list[tuple[int, str, list[str]]] = []
+        for msg_id, terms in self._message_terms.items():
+            matched_terms = {term for pattern, term in terms if pattern.search(query or "")}
+            if len(matched_terms) < 2:
+                continue
+            # An enumeration term is rendered as its real "<field>=<code>
+            # (<meaning>)" line where one is known, instead of the bare
+            # meaning -- see _index_message_terms for why: the meaning alone
+            # told a real generation which object to call, not which exact
+            # value to pass its setter.
+            matched = sorted({self._message_term_hints.get(term, term) for term in matched_terms})
+            scored.append((len(matched), msg_id, matched))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+
+        hits: list[tuple[str, str, list[str]]] = []
+        for _count, msg_id, matched in scored[:top_k]:
+            instance = self._message_instance.get(msg_id)
+            class_name = self._instance_to_class.get(instance) if instance else None
+            if instance and class_name:
+                hits.append((instance, class_name, matched))
+
+        logger.info(
+            "Static context (message objects): %d office-message object(s) "
+            "matched: %s",
+            len(hits),
+            ", ".join(f"{instance} ({', '.join(matched)})" for instance, _, matched in hits)
+            or "none",
+        )
+        return hits
+
+    def message_object_context(self, hits: list[tuple[str, str, list[str]]]) -> str:
+        """`message_object_hits`' result, rendered as one card per object:
+        every method of its class, one line each -- `<instance>.<method>(...)`,
+        its docstring's first line, and any dict keys its params document.
+
+        This is what tells the model which object a stimulus call belongs
+        to: an API-surface method chunk on its own carries a bare method
+        name (`set_type`), and that name alone is not unique -- ~50 classes
+        define `set_bos`. A card names the real declared instance
+        (`wcr_office_01041`) up front and lists every one of its methods
+        under it, so the model has a real object to call instead of picking
+        one of many classes' same-named methods at random.
+        """
+        return "\n\n".join(
+            self._object_card(instance, class_name, matched) for instance, class_name, matched in hits
+        )
+
+    def _object_card(self, instance: str, class_name: str, matched_terms: list[str]) -> str:
+        lines = [f"{instance}: {class_name}  (matched: {', '.join(matched_terms)})"]
+        for (cls, _method), hit in self._api_records.items():
+            if cls != class_name:
+                continue
+            signature, summary, keys = _method_signature(hit.text, instance)
+            line = signature
+            if summary:
+                line += f"  # {summary}"
+            if keys:
+                line += f" keys: {', '.join(keys)}"
+            lines.append(line)
+        return "\n".join(lines)
 
     def _guaranteed_api_hits(self, query: str) -> dict[tuple[str, str], KeywordHit]:
         """`self._core_api_methods`, plus whichever `_TRIGGERED_API_METHODS`

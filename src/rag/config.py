@@ -16,6 +16,7 @@ class RetrievalConfig:
     static_track_top_k: int = 4
     static_parameter_top_k: int = 6
     static_icd_top_k: int = 6
+    static_message_object_top_k: int = 2
 
 
 @dataclass
@@ -57,6 +58,7 @@ _RETRIEVAL_KEYS = {
     "static_track_top_k": "static_track_top_k",
     "static_parameter_top_k": "static_parameter_top_k",
     "static_icd_top_k": "static_icd_top_k",
+    "static_message_object_top_k": "static_message_object_top_k",
 }
 _GENERATION_KEYS = {
     "ollama_host": "ollama_host",

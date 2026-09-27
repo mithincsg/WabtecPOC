@@ -294,10 +294,12 @@ test_script:
 
 
       # User Defined Functions
-      <one helper per repeated multi-step sequence — office message builders
-       such as send_<msg id>_msg(...), input_verification(...),
-       output_verification(...), set_ob_to_cutout() — each factored out
-       because more than one branch needs it>
+      <a send_<msg id>_msg(...) helper for every office message the MESSAGE
+       OBJECTS block names, always factored out even if only one branch
+       sends it; plus one helper per other repeated multi-step sequence —
+       input_verification(...), output_verification(...),
+       set_ob_to_cutout() — factored out because more than one branch
+       needs it>
 
 
       if __name__ == "__main__":
@@ -334,6 +336,11 @@ test_script:
     Where each thing you write must come from:
     - Structure, style, control flow, helper-call ordering -> the house
       skeleton above.
+    - Which object to call for a stimulus, and every method that object
+      has -> the MESSAGE OBJECTS context. Each entry's header line names the
+      real declared instance (e.g. `wcr_office_01041`); call every method
+      listed under it through that exact object, never through a different
+      object, and never through a bare name with no object.
     - Function names, object names, keyword-argument names, enum/constant
       names, argument order -> the WCR test-automation API context. This is
       the only authority on the API surface; if the reference scripts call
@@ -356,6 +363,28 @@ test_script:
     - Do not invent API calls, rename their keyword arguments, or invent a
       parameter, message, event, block or milepost that no context block
       contains.
+    - Never write a MESSAGE OBJECTS object's setup/send calls inline more
+      than once. The first time any branch needs to send a given message,
+      stop and write a `send_<msg id>_msg(...)` function for it under
+      `# User Defined Functions` instead, parameterized by whatever differs
+      between the branches that need it (mileposts, restriction values,
+      TBC/CFG values, instance numbers, ...); every branch that needs that
+      message then only calls the helper. This applies even to the very
+      first branch — do not write the calls inline "for now" and factor
+      them out later. Finding the same object's calls repeated inline
+      across two or more `if`/`elif` branches is always this rule being
+      broken, not a valid alternative style.
+    - If a test case needs an office message and the MESSAGE OBJECTS block
+      says none matched, do not call a method on a guessed object or a bare
+      method name from the API SURFACE block instead — write
+      `# TODO: send <message> — no message object was retrieved` in that
+      branch and leave the stimulus unwritten.
+    - A MESSAGE OBJECTS header line's "matched" list may show an ICD field
+      in `<field>=<code> (<meaning>)` form (e.g. `Bulletin Type=6 (Work
+      zone)`). That is the exact value this message needs; call the object's
+      matching setter (its docstring names the field, e.g. "sets value of
+      Bulletin type") with exactly that meaning string. Never invent a
+      differently-named setter or a differently-cased/spelled value for it.
     - Every `wcr_track.set_track_to_use(...)` call includes a `subdivID` key
       set to this requirement's subdivision, even where `TrackType` is
       `'AUX'` rather than `'AUX_POOL'`. The API docstring calls `subdivID`
@@ -420,6 +449,11 @@ test_script:
 
     Approved test cases (S_no -> description), one automation branch each:
     $test_cases
+
+    === MESSAGE OBJECTS — the office message(s) this requirement sends;
+    every method below is callable on the object named in its own header
+    line, and no other object ===
+    $message_object_context
 
     === API SURFACE — the only callable functions and argument names ===
     $api_context

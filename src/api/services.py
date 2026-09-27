@@ -109,6 +109,7 @@ class Services:
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
                         static_icd_top_k=self.settings.retrieval.static_icd_top_k,
+                        static_message_object_top_k=self.settings.retrieval.static_message_object_top_k,
                     )
         return self._script_generator
 
