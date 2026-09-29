@@ -11,6 +11,7 @@ from kb_ingestion.extractors.xml_extractor import normalize_subdivision
 from kb_ingestion.pipeline import ChunkingPipeline, discover_files
 
 from .keyword_index import KeywordHit, KeywordIndex
+from .requirement_parser import requirement_chapter
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,51 @@ def _track_groups_by_subdivision(store: _StaticDocumentStore) -> dict[str, froze
     return {subdivision: frozenset(names) for subdivision, names in groups.items()}
 
 
+def _track_legends_by_subdivision(store: _StaticDocumentStore) -> dict[str, list[dict[str, str]]]:
+    """`{subdivision: [TrackNameFeature record fields]}`, in the legend's own
+    order -- sent with every track context, since which track names exist is
+    never something a requirement's wording could make a keyword search find.
+    """
+    _ids, texts, metadatas = store.get_all_documents()
+    legends: dict[str, list[dict[str, str]]] = {}
+    for text, metadata in zip(texts, metadatas):
+        if (metadata or {}).get("document_type") != "track_data":
+            continue
+        if (metadata or {}).get("table_title") != "TrackNameFeature":
+            continue
+        subdivision = str((metadata or {}).get("subdivision") or "").strip()
+        if not subdivision:
+            continue
+        for line in text.splitlines():
+            fields = dict(part.split("=", 1) for part in line.split(" | ") if "=" in part)
+            if fields.get("TrackName"):
+                legends.setdefault(subdivision, []).append(fields)
+    return legends
+
+
+# The prefix `xml_extractor` puts on a nested record's line to say which
+# block it belongs to (`BlockFeature 2015 > SignalId=...`).
+_PARENT_BLOCK_RE = re.compile(r"\bBlockFeature (\d+) >")
+
+# Track tables every track context already carries in summary form (the
+# legend, the block table, the guaranteed SCAC line), so keyword search never
+# spends a slot on them.
+_SUMMARISED_TRACK_TABLES = frozenset({"TrackNameFeature", "BlockFeature", "Subdivision"})
+
+
+def _miles(raw: float) -> str:
+    return f"{raw / 10000:.4f}".rstrip("0").rstrip(".")
+
+
+def _block_line(block_id: str, start: float, end: float) -> str:
+    """`block: start-end [start-end in miles]` -- both forms, because the
+    XML's mileposts are 1/10000 mile, set_position takes miles and 01041
+    set_segment takes the raw value, and a model left to convert one into
+    the other gets it wrong.
+    """
+    return f"{block_id}: {start:.0f}-{end:.0f} [{_miles(start)}-{_miles(end)}]"
+
+
 def _block_ranges_by_subdivision(
     store: _StaticDocumentStore,
 ) -> dict[str, list[tuple[str, float, float, str]]]:
@@ -255,6 +301,14 @@ def _index_icd_fields(store: _StaticDocumentStore) -> list[tuple[re.Pattern[str]
 # `icd_extractor.icd_units`): the field name, then every message it decodes
 # identically in, as `"<msg_id> <message name>"` entries joined by `"; "`.
 _ICD_HEADER_RE = re.compile(r"^ICD field (.+?) \(message (.+)\)$")
+
+
+def _icd_msg_ids(field_chunk: str) -> set[str]:
+    first_line = field_chunk.strip().splitlines()[0] if field_chunk.strip() else ""
+    header = _ICD_HEADER_RE.match(first_line)
+    if not header:
+        return set()
+    return {entry.partition(" ")[0] for entry in header.group(2).split("; ")}
 
 
 def _message_instances_by_id(instance_to_class: dict[str, str]) -> dict[str, str]:
@@ -484,8 +538,8 @@ def api_call_names(
 # cleanup, verification plumbing every script needs), not situational to one
 # requirement -- so it should never have to win a keyword-popularity contest
 # against unrelated methods to get documented for the model. "Most" rather
-# than "all": data/Examples has only 3 reference scripts today, too few for
-# a stricter threshold to be meaningful, and the methods just under 100% here
+# than "all": data/Examples has only a handful of reference scripts, too few
+# for a stricter threshold to be meaningful, and the methods just under 100% here
 # (e.g. set_track_to_use) are ones no wording-based rule could gate anyway --
 # which physical track a script uses is an environment-setup detail, never
 # part of a requirement or test case's behaviour (see _names_parameter_identifier
@@ -573,6 +627,89 @@ def _discover_core_api_methods(
     return core
 
 
+@dataclasses.dataclass(frozen=True)
+class ExampleFamily:
+    """What the reference script(s) for one requirement chapter call beyond
+    the core methods: the calls a requirement from the same chapter is
+    likely to need too."""
+
+    reference_ids: tuple[str, ...]
+    api_pairs: tuple[tuple[str, str], ...]
+    message_ids: tuple[str, ...]
+
+
+def _discover_example_families(
+    examples_dir: Path | None,
+    call_re: re.Pattern[str],
+    instance_to_class: dict[str, str],
+    core: tuple[tuple[str, str], ...],
+    message_instance: dict[str, str],
+) -> dict[str, ExampleFamily]:
+    """`{chapter: ExampleFamily}`, read off the reference scripts.
+
+    A method only one reference script uses never becomes core, and its
+    docstring rarely shares words with a requirement: on switch
+    requirements `wcr_user_act.user_action` ranked 486th and
+    `wcr_start_up.automation_setup` 1061st, far outside the keyword slots,
+    so a switch script never saw the calls L2R7983 is built from. The
+    chapter (`13` for `13.1.1 Facing Approach`) is what ties a new
+    requirement to the reference script written for the same feature. It is
+    read from that script's requirement text heading, so a reference script
+    whose text has no numbered heading joins no family.
+
+    Only (class, method) names and office message ids are taken -- API
+    vocabulary, like the core methods -- never a value.
+    """
+    if not examples_dir:
+        return {}
+    scripts_dir = Path(examples_dir) / "reference_test_scripts"
+    class_to_msg_id = {
+        instance_to_class[instance]: msg_id
+        for msg_id, instance in message_instance.items()
+        if instance in instance_to_class
+    }
+    core_pairs = set(core)
+
+    grouped: dict[str, dict[str, set]] = {}
+    for script in sorted(scripts_dir.glob("*.txt")) if scripts_dir.is_dir() else []:
+        requirement_id = script.stem.split("_", 1)[0]
+        texts = sorted(Path(examples_dir).glob(f"{requirement_id}_*Text*.txt"))
+        chapter = (
+            requirement_chapter(texts[0].read_text(encoding="utf-8", errors="replace"))
+            if texts
+            else None
+        )
+        if not chapter:
+            continue
+        family = grouped.setdefault(chapter, {"ids": set(), "pairs": set(), "msgs": set()})
+        family["ids"].add(requirement_id)
+        for class_name, method in resolved_api_calls(
+            script.read_text(encoding="utf-8", errors="replace"), call_re, instance_to_class
+        ):
+            if class_name in class_to_msg_id:
+                family["msgs"].add(class_to_msg_id[class_name])
+            elif not _NUMBERED_CLASS_RE.search(class_name) and (class_name, method) not in core_pairs:
+                family["pairs"].add((class_name, method))
+
+    families = {
+        chapter: ExampleFamily(
+            reference_ids=tuple(sorted(found["ids"])),
+            api_pairs=tuple(sorted(found["pairs"])),
+            message_ids=tuple(sorted(found["msgs"])),
+        )
+        for chapter, found in grouped.items()
+    }
+    for chapter, family in sorted(families.items()):
+        logger.info(
+            "Static context (python_apis): chapter %s family from %s: %d method(s), office message(s) %s",
+            chapter,
+            ", ".join(family.reference_ids),
+            len(family.api_pairs),
+            ", ".join(family.message_ids) or "none",
+        )
+    return families
+
+
 def _names_parameter_identifier(query: str) -> bool:
     """Reuses `_parameter_ids` -- a requirement naming TBC137 has already
     stated it will set and restore that parameter, so `set_default_tbc`'s
@@ -600,6 +737,38 @@ def _names_parameter_identifier(query: str) -> bool:
 _TRIGGERED_API_METHODS: tuple[tuple[Callable[[str], bool], tuple[str, str]], ...] = (
     (_names_parameter_identifier, ("PublicDebugClient", "set_default_tbc")),
 )
+
+
+# Docstring lines that tell the model nothing a call needs: the types are
+# already in the signature, most methods return None, and every stub body is
+# a bare `...`.
+_API_DOC_NOISE_RE = re.compile(r'^(?::(?:type|rtype)\b.*|:return:\s*None|\.\.\.|""")$')
+
+
+def _compact_api_source(text: str) -> str:
+    kept = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or _API_DOC_NOISE_RE.match(line):
+            continue
+        kept.append(line if line.startswith(("def ", "@")) else "  " + line)
+    return "\n".join(kept).replace("<br>", "").replace("&lt;", "<").replace("&gt;", ">")
+
+
+def _format_api_hits(hits: list[KeywordHit], class_to_instance: dict[str, str]) -> str:
+    """API method chunks for the prompt, each labelled with the object it is
+    called through (`wcr_display.press_key`) -- a bare method name is not
+    unique across classes -- and compacted with `_compact_api_source`.
+    Formatting only: the indexed text BM25 ranks is untouched.
+    """
+    blocks = []
+    for index, hit in enumerate(hits, start=1):
+        class_name = hit.metadata.get("class_name")
+        method = hit.metadata.get("method_name")
+        owner = class_to_instance.get(class_name) or class_name
+        label = f"{owner}.{method}" if owner and method else (method or class_name or "unknown")
+        blocks.append(f"[{index}] {label}\n{_compact_api_source(hit.text)}")
+    return "\n\n".join(blocks)
 
 
 def _format_hits(hits: list[KeywordHit]) -> str:
@@ -644,19 +813,25 @@ class StaticContextProvider:
     def __init__(
         self,
         ingestion_config: PipelineConfig,
+        track_block_window: int = 8,
     ):
         self._config = ingestion_config
+        self._track_block_window = track_block_window
         store = _build_static_chunks(ingestion_config)
         self._chunk_count = store.count()
         self._keyword_index = KeywordIndex(store)
         self._subdivisions = _list_subdivisions(store)
         self._railroad_scac = _railroad_scac_by_subdivision(store)
         self._track_groups = _track_groups_by_subdivision(store)
+        self._track_legends = _track_legends_by_subdivision(store)
         self._block_ranges = _block_ranges_by_subdivision(store)
         self._parameter_records = _index_parameter_records(store)
         self._icd_fields = _index_icd_fields(store)
         self._api_records = _index_api_records(store)
         self._instance_to_class = _declared_instances(_python_apis_source_paths(ingestion_config))
+        self._class_to_instance: dict[str, str] = {}
+        for instance, class_name in self._instance_to_class.items():
+            self._class_to_instance.setdefault(class_name, instance)
         self._api_call_re = _build_api_call_regex(self._instance_to_class.keys())
         self._core_api_methods = _discover_core_api_methods(
             ingestion_config.examples_dir, self._api_call_re, self._instance_to_class
@@ -664,6 +839,13 @@ class StaticContextProvider:
         self._message_instance = _message_instances_by_id(self._instance_to_class)
         self._message_terms, self._message_term_hints = _index_message_terms(
             store, set(self._message_instance)
+        )
+        self._example_families = _discover_example_families(
+            ingestion_config.examples_dir,
+            self._api_call_re,
+            self._instance_to_class,
+            self._core_api_methods,
+            self._message_instance,
         )
 
     def api_call_names(self, script_text: str) -> set[str]:
@@ -681,15 +863,25 @@ class StaticContextProvider:
         return resolved_api_calls(script_text, self._api_call_re, self._instance_to_class)
 
     def api_context(
-        self, query: str, top_k: int, exclude_classes: frozenset[str] = frozenset()
+        self,
+        query: str,
+        top_k: int,
+        exclude_classes: frozenset[str] = frozenset(),
+        chapter: str | None = None,
     ) -> str:
         """WCR test-automation API documentation for the script call, formatted
         for a prompt. See `api_hits` for the records themselves.
         """
-        return _format_hits(self.api_hits(query, top_k, exclude_classes))
+        return _format_api_hits(
+            self.api_hits(query, top_k, exclude_classes, chapter), self._class_to_instance
+        )
 
     def api_hits(
-        self, query: str, top_k: int, exclude_classes: frozenset[str] = frozenset()
+        self,
+        query: str,
+        top_k: int,
+        exclude_classes: frozenset[str] = frozenset(),
+        chapter: str | None = None,
     ) -> list[KeywordHit]:
         """WCR test-automation API documentation for the script call.
 
@@ -715,6 +907,10 @@ class StaticContextProvider:
         expect them, rather than left to the same keyword-popularity contest
         that misses the core methods.
 
+        With `chapter`, the methods the same chapter's reference script
+        calls beyond the core ones are fetched directly too (see
+        `_discover_example_families`).
+
         Whatever slots remain go to the ordinary keyword search, for
         genuinely variable calls (driving commands, wayside message
         helpers) that cannot be enumerated in advance.
@@ -722,7 +918,7 @@ class StaticContextProvider:
         if top_k <= 0:
             return []
 
-        included = self._guaranteed_api_hits(query)
+        included = self._guaranteed_api_hits(query, chapter)
         guaranteed = len(included)
         remaining = top_k - guaranteed
         if remaining > 0:
@@ -741,7 +937,7 @@ class StaticContextProvider:
                     included.setdefault(key, hit)
 
         logger.info(
-            "Static context (python_apis): %d guaranteed (core+triggered) + "
+            "Static context (python_apis): %d guaranteed (core+triggered+family) + "
             "%d searched = %d hit(s) (top_k=%d)",
             guaranteed,
             len(included) - guaranteed,
@@ -750,7 +946,9 @@ class StaticContextProvider:
         )
         return list(included.values())
 
-    def message_object_hits(self, query: str, top_k: int) -> list[tuple[str, str, list[str]]]:
+    def message_object_hits(
+        self, query: str, top_k: int, chapter: str | None = None
+    ) -> list[tuple[str, str, list[str]]]:
         """`[(declared instance, class, matched terms)]` for the office
         message(s) this requirement's own wording identifies -- see
         `_index_message_terms` for what counts as a term -- ranked by how
@@ -771,6 +969,11 @@ class StaticContextProvider:
         that same verification cleared two or more independent terms, so
         requiring corroboration from a second term is a real bar, not an
         arbitrary one.
+
+        With `chapter`, slots the wording left open go to the office messages
+        the same chapter's reference script sends: a switch requirement
+        worded without any ICD term still needs the authority and bulletin
+        its reference script sets up (see `_discover_example_families`).
         """
         if top_k <= 0:
             return []
@@ -788,12 +991,32 @@ class StaticContextProvider:
             scored.append((len(matched), msg_id, matched))
         scored.sort(key=lambda item: (-item[0], item[1]))
 
+        # A message whose matched terms are all already matched by a
+        # higher-ranked one adds no evidence of its own: 01043 (Bulletin
+        # Cancellation) matches "work zone" only because it shares 01041's
+        # Bulletin Type table, and its card would cost ~1.9k tokens of prompt.
         hits: list[tuple[str, str, list[str]]] = []
-        for _count, msg_id, matched in scored[:top_k]:
+        kept_terms: list[set[str]] = []
+        for _count, msg_id, matched in scored:
+            if len(hits) >= top_k:
+                break
+            if any(set(matched) <= earlier for earlier in kept_terms):
+                continue
             instance = self._message_instance.get(msg_id)
             class_name = self._instance_to_class.get(instance) if instance else None
             if instance and class_name:
                 hits.append((instance, class_name, matched))
+                kept_terms.append(set(matched))
+
+        family = self._example_families.get(chapter or "")
+        for msg_id in family.message_ids if family else ():
+            instance = self._message_instance.get(msg_id)
+            class_name = self._instance_to_class.get(instance) if instance else None
+            if len(hits) >= top_k or not class_name or any(hit[0] == instance for hit in hits):
+                continue
+            hits.append(
+                (instance, class_name, [f"sent by reference {', '.join(family.reference_ids)} (chapter {chapter})"])
+            )
 
         logger.info(
             "Static context (message objects): %d office-message object(s) "
@@ -827,7 +1050,8 @@ class StaticContextProvider:
             if cls != class_name:
                 continue
             signature, summary, keys = _method_signature(hit.text, instance)
-            line = signature
+            summary = re.sub(r"^This function (?:will )?", "", summary)
+            line = signature.removesuffix(" -> None")
             if summary:
                 line += f"  # {summary}"
             if keys:
@@ -835,7 +1059,9 @@ class StaticContextProvider:
             lines.append(line)
         return "\n".join(lines)
 
-    def _guaranteed_api_hits(self, query: str) -> dict[tuple[str, str], KeywordHit]:
+    def _guaranteed_api_hits(
+        self, query: str, chapter: str | None = None
+    ) -> dict[tuple[str, str], KeywordHit]:
         """`self._core_api_methods`, plus whichever `_TRIGGERED_API_METHODS`
         predicates match `query` -- the `(class, method)` pairs `api_hits`
         fetches directly rather than via keyword search. A missing pair logs
@@ -849,6 +1075,9 @@ class StaticContextProvider:
         for predicate, pair in _TRIGGERED_API_METHODS:
             if predicate(query):
                 self._add_guaranteed_hit(included, pair, "triggered")
+        family = self._example_families.get(chapter or "")
+        for pair in family.api_pairs if family else ():
+            self._add_guaranteed_hit(included, pair, "example family")
         return included
 
     def _add_guaranteed_hit(
@@ -931,7 +1160,12 @@ class StaticContextProvider:
         )
         return []
 
-    def icd_context(self, query: str, top_k: int) -> str:
+    def icd_context(
+        self,
+        query: str,
+        top_k: int,
+        message_objects: list[tuple[str, str, list[str]]] | tuple = (),
+    ) -> str:
         """Decoded ICD message fields the requirement names -- what
         `Train Type=1` or `Restricted Speed=1` means -- formatted for a
         prompt.
@@ -943,18 +1177,44 @@ class StaticContextProvider:
         which it named. Only multi-word names are matched, so a bare "Speed"
         or "Direction" field never rides in on ordinary wording. `top_k` is a
         ceiling.
+
+        With `message_objects` (see `message_object_hits`), only fields of
+        those messages are kept, and the fields behind their enumeration
+        matches are added: a work-zone requirement matched 01041 through
+        "Bulletin Type=6 (Work zone)" but named only "calculated position
+        uncertainty", which pulled that field from two locomotive reports
+        (01071, 02054) the test never sends -- and never the Bulletin Type
+        table the test does set. Without message objects, name matching
+        alone decides, as before.
         """
         if top_k <= 0:
             return ""
-        hits = [
+        candidates = [
             hit
             for pattern, field_hits in self._icd_fields
             if pattern.search(query or "")
             for hit in field_hits
-        ][:top_k]
+        ]
+        if message_objects:
+            msg_ids = {instance.rsplit("_", 1)[-1] for instance, _, _ in message_objects}
+            enum_fields = {
+                term.split("=", 1)[0]
+                for _, _, matched in message_objects
+                for term in matched
+                if "=" in term
+            }
+            candidates += [
+                hit
+                for pattern, field_hits in self._icd_fields
+                if any(pattern.fullmatch(field) for field in enum_fields)
+                for hit in field_hits
+            ]
+            candidates = [hit for hit in candidates if msg_ids & _icd_msg_ids(hit.text)]
+        hits = list({hit.chunk_id: hit for hit in candidates}.values())[:top_k]
         logger.info(
-            "Static context (icd): %d field record(s) named in the requirement (%s)",
+            "Static context (icd): %d field record(s)%s (%s)",
             len(hits),
+            " of the matched message object(s)" if message_objects else " named in the requirement",
             ", ".join(sorted({h.metadata.get("section_path", "").split(" > ")[-1] for h in hits})) or "none",
         )
         return _format_hits(hits)
@@ -964,14 +1224,16 @@ class StaticContextProvider:
         query: str,
         top_k: int,
         subdivision: str | None,
+        include_blocks: bool = False,
     ) -> str:
-        return self.track_context_for(query, top_k, subdivision)[0]
+        return self.track_context_for(query, top_k, subdivision, include_blocks)[0]
 
     def track_context_for(
         self,
         query: str,
         top_k: int,
         subdivision: str | None,
+        include_blocks: bool = False,
     ) -> tuple[str, tuple[str, ...]]:
         """Track context for the subdivision picked in the UI, plus which
         subdivisions it was actually drawn from.
@@ -991,6 +1253,15 @@ class StaticContextProvider:
         The caller gets the subdivisions back rather than re-deriving them,
         because what was searched is reported in the UI and must be the same
         set that produced these hits.
+
+        The track legend is always sent, and with `include_blocks` (the
+        script call) so is a block table: the first `track_block_window`
+        blocks of each track plus every block a retrieved feature row
+        belongs to. Keyword search over requirement prose returned one
+        arbitrary BlockFeature chunk and no legend, so the track names and
+        milepost ranges every script needs were left to luck. The search
+        therefore skips the tables these now cover and spends its slots on
+        situational feature rows (signals, crossings, speed restrictions).
         """
         if top_k <= 0 or not subdivision:
             logger.info("Static context (track_data): skipped, no subdivision picked")
@@ -1005,16 +1276,65 @@ class StaticContextProvider:
             return (
                 metadata.get("document_type") == "track_data"
                 and metadata.get("subdivision") == chosen
+                and metadata.get("table_title") not in _SUMMARISED_TRACK_TABLES
             )
 
         hits = self._keyword_index.search(query, top_k, predicate=predicate)
+        sections = [self._track_legend(chosen)]
+        if include_blocks:
+            referenced = {block for hit in hits for block in _PARENT_BLOCK_RE.findall(hit.text)}
+            sections.append(self._block_table(chosen, referenced))
+        sections.append(_format_hits(hits))
         logger.info(
-            "Static context (track_data): %d/%d hit(s) in subdivision %s",
+            "Static context (track_data): legend%s + %d/%d feature hit(s) in subdivision %s",
+            " + block table" if include_blocks else "",
             len(hits),
             top_k,
             chosen,
         )
-        return self._with_railroad_scac(_format_hits(hits), chosen), (chosen,)
+        context = "\n\n".join(section for section in sections if section)
+        return self._with_railroad_scac(context, chosen), (chosen,)
+
+    def _track_legend(self, subdivision: str) -> str:
+        legend = self._track_legends.get(subdivision)
+        if not legend:
+            return ""
+        tracks = "; ".join(
+            f"{fields['TrackName']} (value {fields.get('TrackValue', '?')}, "
+            f"{fields.get('NumberBlocks', '?')} blocks)"
+            for fields in legend
+        )
+        return f"Tracks in subdivision {subdivision} (TrackNameFeature): {tracks}"
+
+    def _block_table(self, subdivision: str, referenced: set[str]) -> str:
+        by_track: dict[str, list[tuple[float, float, str]]] = {}
+        for track, start, end, block in self._block_ranges.get(subdivision, []):
+            by_track.setdefault(track, []).append((start, end, block))
+        if not by_track:
+            return ""
+
+        legend_order = [fields["TrackName"] for fields in self._track_legends.get(subdivision, [])]
+        tracks = [t for t in legend_order if t in by_track] + [t for t in by_track if t not in legend_order]
+        window = self._track_block_window
+        lines = [
+            f"Blocks (first {window} per track): block: start-end raw XML milepost "
+            f"[miles]. set_position \"point\" takes miles; 01041 set_segment "
+            f"\"start\"/\"end\" take the raw value."
+        ]
+        shown: set[str] = set()
+        for track in tracks:
+            blocks = sorted(by_track[track])[:window]
+            shown.update(block for _, _, block in blocks)
+            lines.append(f"{track}: " + "; ".join(_block_line(b, s, e) for s, e, b in blocks))
+
+        extra = [
+            f"{track} {_block_line(block, start, end)}"
+            for track, start, end, block in self._block_ranges.get(subdivision, [])
+            if block in referenced and block not in shown
+        ]
+        if extra:
+            lines.append("Blocks the feature rows below belong to: " + "; ".join(extra))
+        return "\n".join(lines)
 
     def _with_railroad_scac(self, context: str, subdivision: str) -> str:
         """Prepends this subdivision's real `RailroadSCAC`, guaranteed, not

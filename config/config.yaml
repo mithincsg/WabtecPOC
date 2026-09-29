@@ -20,6 +20,12 @@ examples_dir: data/Examples
 
 caf_mapping_file: config/caf_mapping.json
 
+# Synthetic values for what no delivered source holds (TGT_* target keys and
+# locations, bulletin segment limits, timings), built from data/track_data by
+# scripts/build_synthetic_data.py. Looked up by subdivision for the script
+# call only; not indexed.
+synthetic_data_file: data/synthetic_data/synthetic_test_data.json
+
 # --- Chunking ------------------------------------------------------------
 
 chunk_max_tokens: 512

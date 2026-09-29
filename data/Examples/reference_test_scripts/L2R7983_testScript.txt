@@ -1,0 +1,742 @@
+# This Python file uses the following encoding: utf-8
+"""Information contained in this document is proprietary and confidential to, 
+and the trade secret of, Wabtec Railway Electronics of Germantown, Maryland"""
+from Common.WCR_public import *
+
+
+def main():
+    run_test.set_execution_type("Manual")
+    run_test.set_test_case_function_table({"Positive": "handle_test_case"})
+    run_test.run()
+
+
+def handle_test_case(data_sheet):
+    wcr_start_up.automation_setup()
+    case = data_sheet["S_no"]
+
+    # Pre-Condition
+    wcr_debug_client.set_tbc({'scac': 'UP', 'parameter': 'TBC158_', 'value': 7000})
+    # Test Scenarios
+    # Test Scenario 1
+    if case == 1:
+        # Bulletin Type as MAS PTCS target, HEO '0' MPH Work Zone target
+        # Unmonitored switch is located in TBC137 MPH Becoming located Signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 24.96, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.0,
+                                        'sub_id': 48107, 'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were known"
+                                 " prior to the leading edge of the train coming within calculated position"
+                                 "uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 48107, 'PTC Suspension', 26.7, 36.1, 'Main1')
+        wcr_user_act.user_action("Press 'Main' key & 'Target Prompt' key (red color) followed by  'View All Prompts' "
+                                 "key and then you can select the Press key to Acknowledge PTC Suspension prompt")
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.70 MP to 36.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 & MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "'becoming located signal' target from 18.95 MP to 26.70 MP. Path: Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE")
+        send_1041_msg(1, 92, 48107, 'Work zone', 25.5, 26.5, 'Main1', True, False, 0)
+        wcr_display.press_key({"key": "F5", "Key_Text": "Received"})
+        wcr_display.press_key({"key": "F6", "Key_Text": "Confirmed"})
+        wcr_user_act.user_action("Ensure HEO '0' MPH Work Zone target is generated from 25.5 MP to 26.5 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: False, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05MP.")
+        verify_input_output(26.7, 36.0, 1000009, 'TC: Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 2
+    elif case == 2:
+        # Bulletin Type as MAS PTCS target, HEO 11 MPH Critical Alert target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 24.98, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.02, 'sub_id': 48107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 48107, 'PTC Suspension', 26.5, 36.1, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.5 MP to 36.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        send_1041_msg(1, 92, 48107, 'Critical alert', 25.5, 26.5, 'Main1', True, False, 11)
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "'becoming located signal' target from MP 18.95 to MP 26.50, Path: Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE.")
+        wcr_user_act.user_action("Ensure HEO 11 mph 'Critical Alert' target is generated from 25.50MP to 26.50MP.\n "
+                                 "Path: Debug Client->Generic->Enforcement page->Targets & Entire: FALSE. Verify "
+                                 "switch 1000009 is located within this target, switch is at 26.05 MP.")
+        verify_input_output(26.5, 36.0, 1000009, 'TC: Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 3
+    elif case == 3:
+        # Bulletin Type as MAS PTCS target, Position Uncertainity target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 24.96, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.0, 'sub_id': 48107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 48107, 'PTC Suspension', 26.5, 37.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.50 MP to 36.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "'becoming located signal' target from 18.95MP to 26.50MP. Path: Debug Client->Generic"
+                                 "->Enforcement->Targets & Entire: FALSE.")
+        wcr_debug_client.set_tbc({'scac': 'COMMON', 'parameter': 'TBC201_', 'value': 5})
+        wcr_user_act.user_action("Ensure ET 0 MPH Position Uncertainty target is generated from 18.95MP to 36.05MP.\n "
+                                 "Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05 MP.")
+        verify_input_output(26.5, 37.0, 1000009, 'TC: Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 4
+    elif case == 4:
+        # Bulletin Type as MAS PTCS target, ET '0' MPH Unknown Direction
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_debug_client.set_tbc({'scac': 'COMMON', 'parameter': 'TBC271_', 'value': 10})
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 24.5, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.55, 'sub_id': 48107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position "
+                                 "uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1051_msg(False, False, 48107, 'Main1', 240000, 260000, '', '', '', '')
+        send_1041_msg(0, 91, 48107, 'PTC Suspension', 26.5, 37.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.50 MP to 36.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from 18.95 MP to 26.50 MP. Path : Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE")
+        verify_input_output(26.5, 37.0, 1000009, 'TC: Stop Required', '2006 & 2007', 26.05)
+        wcr_loco_sim.drive_train({'speed': 5, 'slew_seconds': 5, 'pause_seconds': 5})
+        wcr_loco_sim.set_reverser("Reverse")
+        wcr_user_act.wait_duration(10)
+        wcr_user_act.observe("Wait till to get ET '0' MPH 'Unknown Direction' target is generated from 18.95 MP to "
+                             "36.05 MP. Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify "
+                             "switch 1000009 is located within this target, switch is at 26.05 MP.")
+        wcr_loco_sim.stop_train({'speed': 5, 'slew_seconds': 5, 'pause_seconds': 5})
+        wcr_loco_sim.set_reverser("Forward")
+
+    # Test Scenario 5
+    elif case == 5:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH Synchronization target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 24.96, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.52, 'sub_id': 48107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement"
+                                 " were known prior to the leading edge of the train coming within calculated "
+                                 "position uncertainty of the track circuit in which the switch is located. \n "
+                                 "verify at path: Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 48107, 'PTC Suspension', 26.5, 37.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from 26.5 MP to 36.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from MP 18.95 to MP 26.50, Path : Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE")
+        send_1041_msg(1, 92, 48107, 'Speed restriction')
+        wcr_user_act.user_action("Ensure ET '0' MPH Non-Synchronized target is generated from 18.95 MP to 36.05 MP.\n "
+                                 "Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05MP.")
+        verify_input_output(26.5, 37.0, 1000009, 'TC: Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 6
+    elif case == 6:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH TOOS target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 58107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 58107, 'track_group': 'main1', 'point': 24.95, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.0, 'sub_id': 58107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 58107, 'PTC Suspension', 26.5, 27.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.5 MP to 27.0 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from MP18.95 to MP26.05 Path: Debug Client->Generic->"
+                                 "Enforcement->Targets & Entire: FALSE.")
+        send_1041_msg(1, 92, 58107, 'Track out of service', 25.5, 26.5, 'Main1')
+        wcr_user_act.user_action("Ensure ET '0' MPH TOOS target is generated from 25.50 MP to 26.50 MP.\n Path: Debug "
+                                 "Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch 1000009 is "
+                                 "located within this target, switch is at 26.05 MP.")
+        verify_input_output(26.5, 27.0, 1000009, 'TC: No Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 7
+    elif case == 7:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH Joint Authority target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 58107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 58107, 'track_group': 'main1', 'point': 25.5, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.55, 'sub_id': 58107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 58107, 'PTC Suspension', 27.0, 28.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        send_1051_msg(False, True, 58107, 'Main1', '220000', '280000', '', 260000, 270000, 'Joint with train')
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  27 MP to 28 MP.\n Path: Debug"
+                                 " Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH"
+                                 " becoming located signal target from MP18.9 to MP26.05, Path: Debug Client->Generic->"
+                                 "Enforcement->Targets & Entire: FALSE.")
+        wcr_user_act.user_action("Ensure ET '0' MPH Joint Authority target is generated from 26 MP to 27 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05 MP.")
+        verify_input_output(27.0, 28.0, 1000009, 'TC: No Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 8
+    elif case == 8:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH Conditional Authority target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 58107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 58107, 'track_group': 'main1', 'point': 25.5, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.55, 'sub_id': 58107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 58107, 'PTC Suspension', 26.5, 27.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.5 MP to 27.0 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        send_1051_msg(True, False, 58107, 'Main1', '260000', '270000', 260000, '', '', '')
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from MP18.95 to MP26.05, Path : Debug Client->Generic"
+                                 "->Enforcement->Targets & Entire: FALSE")
+        wcr_user_act.user_action("Ensure ET '0' MPH Conditional Authority target is generated from 26.0 MP to "
+                                 "26.05MP.\n Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, "
+                                 "Verify switch 1000009 is located within this target, switch is at 26.05 MP.")
+        verify_input_output(26.5, 27.0, 1000009, 'TC: No Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 9
+    elif case == 9:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH JA 'JWME' target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 58107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 58107, 'track_group': 'main1', 'point': 24.98, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.53, 'sub_id': 58107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 58107, 'PTC Suspension', 27, 28, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        send_1051_msg(False, True, 58107, 'Main1', '230000', '280000', '', 260000, 270000,
+                      'joint with men and equipment')
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  27.0 MP to 28.0 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from MP18.95 to MP26.05, Path : Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE.")
+        wcr_user_act.user_action("Ensure ET '0' MPH Joint Authority target is generated from 26 MP to 27 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05 MP.")
+        verify_input_output(27.0, 28.0, 1000009, 'TC: No Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 10
+    elif case == 10:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH Unknown Location target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 58107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 58107, 'track_group': 'main1', 'point': 25, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.06, 'sub_id': 58107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were "
+                                 "known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 58107, 'PTC Suspension', 26.50, 27.50, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.50 MP to 27.50 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from 18.95MP to 26.05MP. Path : Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE")
+        wcr_user_act.user_action("Re-locate the loco to ** 26.0 MP_Main1_increasing direction in 58107 subdiv **, wait "
+                                 "till to get the Unknown location prompt, Path: Loco sim->Motion control")
+        wcr_user_act.user_action("Ensure ET '0' MPH Unknown location target is generated from 18.90MP to 36.05MP, \n "
+                                 "Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05MP.")
+        verify_input_output(26.50, 27.50, 1000009, 'TC: No Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 11
+    elif case == 11:
+        # Bulletin Type as MAS PTCS target, HEO 17 MPH Temporary speed restriction target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 48004,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48004, 'track_group': 'main2', 'point': 24.1, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 48004, 'PTC Suspension', 26, 27, 'Main2')
+        wcr_user_act.user_action("Ensure PTC Suspension target is generated from  26 MP to 27 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Ensure switch (1000053 & switch MP is 25.90) is located in a HEO restricted speed "
+                                 "TBC137 MPH becoming located signal target from 19.9 MP to 49.92 MP, Path:Debug Client"
+                                 "->Generic->Enforcement->Targets & Entire: FALSE.")
+        send_1041_msg(1, 92, 48004, 'Speed restriction', 25.50, 26.00, 'Main2', True, False, 17)
+        wcr_user_act.user_action("Ensure HEO 17 MPH Temporary speed restriction target is generated from 25.50 MP to "
+                                 "26.00 MP.\n Path: Debug Client->Generic->Enforcement page->Targets & Entire: FALSE, "
+                                 "Verify switch 1000053 is located within this target, switch MP is at 25.90 MP.")
+        verify_input_output(26, 27, 1000053, 'TC: Stop Required', '3052 to 3060', 25.90)
+
+    # Test Scenario 12
+    elif case == 12:
+        # Bulletin Type as MAS PTCS target, ET 0 MPH JA (Joint Unspecified) target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_5', 'subdivID': 58107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 58107, 'track_group': 'main1', 'point': 25.5, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.55, 'sub_id': 58107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position "
+                                 "uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 58107, 'PTC Suspension', 27, 28, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        send_1051_msg(False, True, 58107, 'Main1', '220000', '280000', '', 260000, 270000, 'joint (unspecified)')
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  27.0 MP to 28.0 MP, \n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Ensure switch (1000009 at MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from MP 18.95 to MP 26.05, Path : Debug Client->"
+                                 "Generic->Enforcement->Targets & Entire: FALSE")
+        wcr_user_act.user_action("Ensure ET '0' MPH Joint Authority target is generated from 26 MP to 27 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05 MP")
+        verify_input_output(27.0, 28.0, 1000009, 'TC: No Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 13
+    elif case == 13:
+        # Bulletin Type as MAS PTCS target, HEO 25 MPH WZ target
+        # Unmonitored switch is located in TBC137 MPH becoming located signal target
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 25.0, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_loco_sim.drive_train({'speed': 2, 'slew_seconds': 2})
+        wcr_loco_sim.wait_for_milepost({'max_wait_seconds': 180, 'point': 25.05, 'sub_id': 48107,
+                                        'track_group': 'main1'})
+        wcr_loco_sim.stop_train({'slew_seconds': 2, 'pause_seconds': 2})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were known"
+                                 " prior to the leading edge of the train coming within calculated position uncertainty"
+                                 " of the track circuit in which the switch is located. \n verify at path: "
+                                 "Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 48107, 'PTC Suspension', 26.25, 37.0, 'Main1')
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  26.25 MP to 36.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE.")
+        wcr_user_act.user_action("Ensure switch (1000009 & MP 26.05) is located in a HEO Restricted speed TBC137 MPH "
+                                 "becoming located signal target from 18.95 MP to 26.24 MP, Path: Debug Client->Generic"
+                                 "->Enforcement->Targets & Entire: FALSE.")
+        send_1041_msg(1, 92, 48107, 'Work zone', 25.5, 26.5, 'Main1', True, False, 25)
+        wcr_display.press_key({'key': 'F5', 'Key_Text': 'Received'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure HEO 25.0 mph Work Zone target is generated from 25.5 MP to 26.05 MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: FALSE, Verify switch "
+                                 "1000009 is located within this target, switch is at 26.05 MP.")
+        verify_input_output(26.24, 36.05, 1000009, 'TC: Stop Required', '2006 & 2007', 26.05)
+
+    # Test Scenario 14
+    elif case == 14:
+        # Bulletin Type as MAS PTCS target, TBC137 MPH RB Cab Signal target
+        # Unmonitored switch is located in RB Cab Signal target & TC: No Stop Required
+        wcr_debug_client.set_tbc({'scac': 'COMMON', 'parameter': 'TBC12_', 'value': 180})
+        wcr_debug_client.set_tbc({'scac': 'UP', 'parameter': 'TBC137_', 'value': 3})
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_12', 'subdivID': 8107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 8107, 'track_group': 'main2', 'point': 28.8, 'direction': 'DECREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were "
+                                 "known prior to the leading edge of the train coming within calculated position "
+                                 "uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 8107, 'PTC Suspension', 25.90, 19.0002, 'Main2')
+        wcr_user_act.user_action("Press 'Main' key &'Target Prompt' key (red color) followed by 'View All Prompts' key"
+                                 " and then you can select the Press key to Acknowledge PTC Suspension prompt")
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  25.90 MP to 19.0002 MP.\n "
+                                 "Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Drive train with 25 mph and enable slew with 5 seconds")
+        wcr_loco_sim.set_cab_signal_status({'aspect': 'restricting(0)'})
+        # wcr_user_act.user_action("Drive the train till MP 27.45")
+        wcr_user_act.user_action("Verify OB generates HEO restricted speed TBC137 MPH RB Cab Signal target from 29.4505"
+                                 " MP to 25.90 MP, Path: Debug Client->Generic->Enforcement->Targets & Entire: FALSE "
+                                 "and switch (1000010) is located within this target, switch MP is 26.10 ")
+        wcr_user_act.user_action("Verify enforcement delay of  RB CAB SIGNAL-RSTD target is greater than zero.Verify "
+                                 "at: Debug Client->Generic->Enforcement->Targets > R-delay. ")
+        verify_input_output(25.90, 19.0002, 1000010, 'TC: No Stop Required', '3008 to 3006', 26.10)
+        wcr_loco_sim.stop_train({'slew_seconds': 4})
+
+    # Test Scenario 15
+    elif case == 15:
+        # Bulletin Type as MAS PTCS target, TBC137 MPH RB Cab Signal target
+        # Unmonitored switch is located in RB Cab Signal target & TC: stop required
+        wcr_debug_client.set_tbc({'scac': 'COMMON', 'parameter': 'TBC12_', 'value': 180})
+        wcr_track.set_track_to_use({'TrackType': 'AUX_POOL', 'sub_folder': 'AUX_16', 'subdivID': 8107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 8107, 'track_group': 'main2', 'point': 28.1, 'direction': 'DECREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 8107, 'PTC Suspension', 25.5, 19.0002, 'Main2')
+        wcr_user_act.user_action("Press 'Main' key &'Target Prompt' key (red color) followed by 'View All Prompts' key"
+                                 " and then you can select the Press key to Acknowledge PTC Suspension prompt")
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  25.50MP to 19.0002MP.\n Path:"
+                                 " Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Drive train with 25 mph and enable slew with 5 seconds")
+        wcr_user_act.user_action("Ensure OB is start moving the train")
+        wcr_loco_sim.set_cab_signal_status({'aspect': 'restricting(0)'})
+#         wcr_user_act.user_action("Drive the train till MP 26.8")
+        wcr_user_act.user_action("Verify OB generates HEO restricted speed TBC137 MPH RB Cab Signal target from "
+                                 "29.4505MP to 25.50 MP, Path: Debug Client->Generic->Enforcement->Targets & Entire: "
+                                 "FALSE and switch (1000010) is located within this target, switch MP is 26.10 ")
+        wcr_user_act.user_action("Verify enforcement delay of  RB CAB SIGNAL-RSTD target is greater than zero.Verify "
+                                 "at: Debug Client->Generic->Enforcement->Targets > R-delay. ")
+        verify_input_output(25.50, 19.0002, 1000010, 'TC: Stop Required', '3008 & 3006', 26.10)
+        wcr_loco_sim.stop_train({'slew_seconds': 5})
+
+    # Test Scenario 16
+    elif case == 16:
+        # Bulletin Type as MAS PTCS target, TBC137 MPH SE Cab signal target
+        # Unmonitored switch is located in SE Cab Signal target & TC: stop required
+        wcr_debug_client.set_tbc({'scac': 'COMMON', 'parameter': 'TBC305_', 'value': 180})
+        wcr_debug_client.set_tbc({'scac': 'UP', 'parameter': 'TBC137_', 'value': 3})
+        wcr_track.set_track_to_use({'TrackType': 'AUX_POOL', 'sub_folder': 'AUX_15', 'subdivID': 8107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 8107, 'track_group': 'main2', 'point': 28.27, 'direction': 'DECREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 8107, 'PTC Suspension', 25.90, 19.0002, 'Main2')
+        wcr_user_act.user_action("Press 'Main' key &'Target Prompt' key (red color) followed by 'View All Prompts' key "
+                                 "and then you can select the Press key to Acknowledge PTC Suspension prompt")
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from  25.90 MP to 19.0002 MP.\n "
+                                 "Path: Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Drive train with 25 mph and enable slew with 5 seconds")
+        wcr_user_act.user_action("Ensure OB is start moving the train")
+        wcr_loco_sim.set_cab_signal_status({'aspect': 'restricting(0)'})
+        wcr_user_act.user_action("Verify OB generates HEO restricted speed TBC137 MPH SE cab signal target from "
+                                 "36.10 MP to 25.90 MP, Path: Debug Client->Generic->Enforcement->Targets & Entire: "
+                                 "FALSE and switch (1000010) is located within this target, switch MP is 26.10 ")
+        wcr_user_act.user_action("Verify enforcement delay of  SE CAB SIGNAL-RSTD target is greater than zero.Verify "
+                                 "at: Debug Client->Generic->Enforcement->Targets > R-delay. ")
+        verify_input_output(25.90, 19.0002, 1000010, 'TC: Stop Required', '3008 & 3006', 26.10)
+        wcr_loco_sim.stop_train({'slew_seconds': 4})
+
+    # Test Scenario 17
+    elif case == 17:
+        # Bulletin Type as MAS PTCS target, TBC137 MPH SE cab signal target
+        # Unmonitored switch is located in SE Cab Signal target & TC: No Stop Required
+        wcr_debug_client.set_tbc({'scac': 'COMMON', 'parameter': 'TBC305_', 'value': 180})
+        wcr_debug_client.set_tbc({'scac': 'UP', 'parameter': 'TBC137_', 'value': 3})
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_13', 'subdivID': 8107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 8107, 'track_group': 'main2', 'point': 28.29, 'direction': 'DECREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_user_act.user_action("Verify the locomotive track location and calculated direction of movement were"
+                                 " known prior to the leading edge of the train coming within calculated position"
+                                 " uncertainty of the track circuit in which the switch is located. \n verify at path:"
+                                 " Debug->Generic-System State ->Position->Yes & Direction->Yes.")
+        send_1041_msg(0, 91, 8107, 'PTC Suspension', 25.90, 19.0002, 'Main2')
+        wcr_user_act.user_action("Press 'Main' key &'Target Prompt' key (red color) followed by 'View All Prompts' key "
+                                 "and then you can select the Press key to Acknowledge PTC Suspension prompt")
+        wcr_display.press_key({'key': 'F3', 'Key_Text': 'Acknowledge'})
+        wcr_display.press_key({'key': 'F6', 'Key_Text': 'Confirmed'})
+        wcr_user_act.user_action("Ensure ET MAS PTC Suspension target is generated from 25.90 MP to 19.0002MP.\n Path: "
+                                 "Debug Client->Generic->Enforcement page->Targets & Entire: TRUE")
+        wcr_user_act.user_action("Drive train with 25 mph and enable slew with 5 seconds")
+        wcr_user_act.user_action("Ensure OB is start moving the train")
+        wcr_loco_sim.set_cab_signal_status({'aspect': 'restricting(0)'})
+        wcr_user_act.user_action("Verify OB generates HEO restricted speed TBC137 MPH SE cab signal target from 36.10 "
+                                 "MP to 25.90 MP, Path: Debug Client->Generic->Enforcement->Targets & Entire: FALSE "
+                                 "and switch (1000010) is located within this target, switch MP is 26.10 ")
+        wcr_user_act.user_action("Verify enforcement delay of  SE CAB SIGNAL-RSTD target is greater than zero.Verify "
+                                 "at: Debug Client->Generic->Enforcement->Targets > R-delay. ")
+        verify_input_output(25.90, 19.0002, 1000010, 'TC: No Stop Required', '3008 and 3006', 26.10)
+        wcr_loco_sim.stop_train({'slew_seconds': 4})
+
+    # Test scenario 18: OB should not utilize unknown switch for any GPS drifts. Added as part of CAPA ECR 252326.
+    elif case == 18:
+        wcr_track.set_track_to_use({'TrackType': 'AUX', 'sub_folder': 'AUX_4', 'subdivID': 48107,
+                                    'APPEND_TRACKS': False})
+        wcr_loco_sim.set_position({'sub_id': 48107, 'track_group': 'main1', 'point': 25, 'direction': 'INCREASING',
+                                   'stealth': True})
+        wcr_state.set_onboard_state({'Next_State': "ACTIVE", 'How_To_Change': "Select_Direction"})
+        wcr_user_act.user_action(
+            "Drive the loco at 10 mph and stop the loco such that the start distance to switch 1000009 is "
+            "approximately 40 ft. \n Start distance can be verified at Debug->Generic->Switch manager->Start distance.")
+        wcr_user_act.user_action(
+            "Ensure from loco sim that loco is placed exactly at 26.0495. Else manually place the loco at 26.0495 MP. ")
+        # Input Verification
+        wcr_user_act.input_verification(
+            "Input Condition Verification: Verify that switch 1000009 is unmonitored and protected by track circuit.\n"
+            "Verify at Debug->Generic->Switch manager that \n"
+            "Switch type is unmonitored \n"
+            "Protection status is TC-Stop required.")
+        wcr_user_act.input_verification(
+            "Input Condition Verification: Verify that approach of switch 1000009 is NORMAL.\n"
+            "Verify at Debug->Generic->Switch manager that \n"
+            "Approaching leg is FN.")
+        wcr_user_act.input_verification(
+            "Input Condition Verification: Verify that switch 1000009 is ahead of leading edge of train with in "
+            "calculated position uncertainty. \n"
+            "Verify at Debug->Generic->Switch manager that distance to switch is 0 ft to 17 ft.")
+        # Output Verification
+        wcr_user_act.observe(
+            "Observe that OB utilizes NORMAL alignment for switch 1000009. \n"
+            " Verify at Debug->Generic->Switch manager that Logical Align is NORMAL. \n"
+            "Also Verify that below log is logged in debug log \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to NORMAL position")
+        wcr_user_act.observe(
+            "Observe that OB did not utilize UNKNOWN position at any fraction of second. \n"
+            "Verify that below log is not logged in debug log. \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to UNKNOWN position")
+        # Providing GPS drift to get switch behind leading edge
+        wcr_user_act.user_action(
+            "Place the loco at 26.0510 MP, 48107 subdiv, Main1 track from loco sim.")
+        wcr_user_act.wait_duration({"message": "Wait", "wait_seconds": 10})
+        # Input Verification
+        wcr_user_act.input_verification(
+            "Input Condition Verification: Verify that switch 1000009 is behind of leading edge of train within "
+            "calculated position uncertainty. \n"
+            "Verify at Debug->Generic->Switch manager that distance to switch is 0ft to -17 ft.")
+        # Output Verification
+        wcr_user_act.observe(
+            "Observe that OB utilizes NORMAL alignment for switch 1000009. \n"
+            " Verify at Debug->Generic->Switch manager that Logical Align is NORMAL. \n"
+            "Also Verify that below log is logged in debug log \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to NORMAL position")
+        wcr_user_act.observe(
+            "Observe that OB did not utilize UNKNOWN position at any fraction of second. \n"
+            "Verify that below log is not logged in debug log. \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to UNKNOWN position")
+        # Providing GPS drift to get switch ahead of leading edge
+        wcr_user_act.user_action(
+            "Place the loco at 26.0544  MP, 48107 subdiv, Main1 track from loco sim.")
+        wcr_user_act.wait_duration({"message": "Wait", "wait_seconds": 10})
+        wcr_user_act.input_verification(
+            "Input Condition Verification: Verify that switch 1000009 is behind of leading edge of train greater than "
+            "calculated position uncertainty. \n"
+            "Verify at Debug->Generic->Switch manager that distance to switch is greater than -17 ft.")
+        # Output Verification
+        wcr_user_act.observe(
+            "Observe that OB utilizes NORMAL alignment for switch 1000009. \n"
+            " Verify at Debug->Generic->Switch manager that Logical Align is NORMAL. \n"
+            "Also Verify that below log is logged in debug log \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to NORMAL position")
+        wcr_user_act.observe(
+            "Observe that OB utilizes NORMAL alignment for switch 1000009. \n"
+            " Verify at Debug->Generic->Switch manager that Logical Align is NORMAL. \n"
+            "Also Verify that below log is logged in debug log \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to NORMAL position")
+        # Providing GPS drift to get switch behind leading edge
+        wcr_user_act.user_action(
+            "Place the loco at 26.0455 MP, 48107 subdiv, Main1 track from loco sim.")
+        wcr_user_act.wait_duration({"message": "Wait", "wait_seconds": 10})
+        # Input Verification
+        wcr_user_act.input_verification(
+            "Input Condition Verification: Verify that switch 1000009 is ahead of leading edge of train greater than "
+            "calculated position uncertainty. \n"
+            "Verify at Debug->Generic->Switch manager that distance to switch greater than 17 ft.")
+        # Output Verification
+        wcr_user_act.observe(
+            "Observe that OB utilizes NORMAL alignment for switch 1000009. \n"
+            " Verify at Debug->Generic->Switch manager that Logical Align is NORMAL. \n"
+            "Also Verify that below log is logged in debug log \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to NORMAL position")
+        wcr_user_act.observe(
+            "Observe that OB did not utilize UNKNOWN position at any fraction of second. \n"
+            "Verify that below log is not logged in debug log. \n"
+            "Log: SYS :2024/12/10 05:24:43.920:SWITCH_MGR:swm_process_switch_ctrl_by_trk_circuit: Unmonitored switch "
+            "[UP:48107:1000009] is aligned to UNKNOWN position")
+
+    # Cleanup Activity
+    wcr_debug_client.set_default_tbc({'scac': 'UP', 'parameter': 'TBC137'})
+    # set OB to Cut-out
+    wcr_state.set_onboard_to_cutout_via_1010_msg()
+
+
+def send_1051_msg(conauth=None, joinrst=None, subid=None, track=None, startmp=None, endmp=None, mp=None, startmp1=None,
+                  endmp1=None, speedtype=None):
+    wcr_office_01051.reset_msg()
+    wcr_office_01051.set_instance(0)
+    wcr_office_01051.set_reason('New Authority')
+    wcr_office_01051.set_action("No crew action required")
+    wcr_office_01051.set_type("Track warrant")
+    wcr_office_01051.set_num(983)
+    wcr_office_01051.set_sub_id(subid)
+    wcr_office_01051.segment_set_segment('Bidirectional')
+    wcr_office_01051.segment_set_from_to({"start": startmp, "end": endmp, "sub_id": subid, "track": track})
+    # Conditional Authority
+    if conauth:
+        wcr_office_01051.after_arrival_set_location({"milepost": mp, "sub_id": subid, "track": track})
+        wcr_office_01051.after_arrival_set_train({"direction": "South", "loco_id": "UP    3580"})
+    # Joint Authority
+    if joinrst:
+        wcr_office_01051.speed_restriction_set_from_to({"end": endmp1, "start": startmp1, "sub_id": subid,
+                                                        "track": track, "speed_type": speedtype, "speed": 0})
+    wcr_office_01051.send_msg()
+
+
+def send_1041_msg(ins=None, d_num=None, subid=None, bul_typ=None, start=None, end=None, trk=None, headend=None,
+                  rst_typ=None, r_spd=None):
+    wcr_office_01041.set_instance(ins)
+    wcr_office_01041.set_displayable_num(d_num)
+    wcr_office_01041.set_num(d_num)
+    wcr_office_01041.set_sub_id(subid)
+    wcr_office_01041.set_type(bul_typ)
+    if r_spd is not None:
+        wcr_office_01041.set_restriction({"head_end": headend, "restricted": rst_typ, "speed": r_spd,
+                                          "type": 'All trains'})
+    if trk is not None:
+        wcr_office_01041.set_segment({"end": int(end * 10000), "start": int(start * 10000), "sub_id": subid,
+                                      "track": trk})
+    wcr_office_01041.send_msg()
+
+
+def verify_input_output(stmp=None, endmp=None, sw=None, pct=None, bid=None, swmp=None):
+    wcr_user_act.observe("Pre-condition: Ensure that the switch is Not located in any below HEO '0' MPH targets: \n"
+                         "--that switch is Not located in any HEO zero (0) mph unknown signal target and \n"
+                         "--that switch is Not located in any HEO zero (0) mph signal target and \n"
+                         "--that switch is Not located in any HEO zero (0) mph enter main track target and \n"
+                         "--that switch is Not located in any HEO zero (0) pass signal at stop target and \n"
+                         "--that switch is Not located in any HEO zero (0) reverse movement target \n"
+                         "--verify at Path: Debug Client->Debug->Enforcement->targets.")
+    wcr_user_act.user_action("Ensure that Unmonitored Switch (" + str(sw) + ") "
+                             "is greater than the calculated position uncertainty in advance of the leading edge "
+                             "of the train, verify at Debug Client->Generic->Switch Manager->switch type is "
+                             "'Unmonitored' & distance to switch is more than 17 ft.")
+    wcr_user_act.user_action("Verify that switch (" + str(sw) + ") "
+                             " Leg is Facing Approach (FN) to that switch Approaching Leg->'FN' and switch "
+                             "is designated as protection status is ** " + str(pct) + ") "
+                             "**. Path-> DebugClient-> Generic-> Switch Manager.")
+    wcr_user_act.user_action("Ensure switch (" + str(sw) + ") "
+                             " is on train’s calculated route, i.e. Block ID: "
+                             "(" + str(bid) + ")  is listed in Route Manager and the track within one foot in "
+                             "approach to the switch point of that switch is PTC type: PTC, "
+                             "Verify at DebugClient->Generic->Route Manager.")
+    if swmp != 25.90:
+        wcr_user_act.input_verification("Ensure Onboard does not have a stored suspended status for the switch "
+                                        "(" + str(sw) + ") Verify following logs are not logged in debug client:"
+                                        "for eg:\n a) VETMS_CHM_RECORDER:|9|FDS|4|WS|20240930080227|181060620|"
+                                        "1000009|Unk|9\nand b) SYS :ROUTE_MGR:rm_determine_sw_suspended_status: "
+                                        "Switch [UP:48107,1000009] suspended status [1] prev[0]")
+        
+    wcr_user_act.observe(f"Observe that OB utilize 'NORMAL' switch {sw} position  for generating the train’s calculated"
+                         f" route. Path Debug Client-> Generic-> Switch Manager->Logical Align: 'NORMAL'.")
+
+
+if __name__ == "__main__":
+    main()

@@ -40,7 +40,7 @@ _CHAR_REF_RE = re.compile(r"&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));")
 _INVALID_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def _sanitized(file_path: Path) -> str:
+def sanitized_xml(file_path: Path) -> str:
     """The file's text with XML-illegal characters removed.
 
     These exports pad fixed-width fields with NULs and emit them literally as
@@ -134,7 +134,7 @@ class XMLTrackDataExtractor:
     """
 
     def extract(self, file_path: Path) -> list[ExtractedUnit]:
-        root = ET.fromstring(_sanitized(file_path))
+        root = ET.fromstring(sanitized_xml(file_path))
 
         subdivision = _subdivision_id(root, file_path)
         subdivision_name = _first_text(root, "SubdivisionName")
@@ -145,7 +145,7 @@ class XMLTrackDataExtractor:
         # would silently fail equality checks downstream.
         railroad_scac = _first_text(root, "RailroadSCAC").strip() or None
 
-        track_names = _track_name_lookup(root)
+        track_names = track_name_lookup(root)
 
         # dict preserves insertion order, so records appear in document order
         # — a block's features stay near the block's own record.
@@ -259,7 +259,7 @@ def _with_track_name(
     return resolved
 
 
-def _track_name_lookup(root: ET.Element) -> dict[str, str]:
+def track_name_lookup(root: ET.Element) -> dict[str, str]:
     """`{TrackValue: TrackName}` for every `TrackNameFeature` in the file.
 
     Built once per file, before the main walk, so `_collect` can resolve a

@@ -15,6 +15,7 @@ from rag.generator import TestCaseGenerator, TestScriptGenerator
 from rag.llm_client import OllamaClient
 from rag.prompts import PromptLibrary
 from rag.static_context import StaticContextProvider
+from rag.synthetic_data import SyntheticTestData
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,10 @@ class Services:
         if self._static_context is None:
             with self._lock:
                 if self._static_context is None:
-                    self._static_context = StaticContextProvider(self.ingestion_config)
+                    self._static_context = StaticContextProvider(
+                        self.ingestion_config,
+                        track_block_window=self.settings.retrieval.static_track_block_window,
+                    )
         return self._static_context
 
     @property
@@ -91,6 +95,7 @@ class Services:
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
                         static_track_top_k=self.settings.retrieval.static_track_top_k,
                         static_icd_top_k=self.settings.retrieval.static_icd_top_k,
+                        static_message_object_top_k=self.settings.retrieval.static_message_object_top_k,
                         caf_mapping=self.caf_mapping,
                     )
         return self._test_case_generator
@@ -110,6 +115,8 @@ class Services:
                         static_parameter_top_k=self.settings.retrieval.static_parameter_top_k,
                         static_icd_top_k=self.settings.retrieval.static_icd_top_k,
                         static_message_object_top_k=self.settings.retrieval.static_message_object_top_k,
+                        synthetic_data=SyntheticTestData(self.ingestion_config.synthetic_data_file),
+                        caf_mapping=self.caf_mapping,
                     )
         return self._script_generator
 

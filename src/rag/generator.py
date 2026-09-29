@@ -13,6 +13,7 @@ from .requirement_parser import parse_requirement
 from .keyword_index import KeywordHit
 from .schema import TEST_CASES_JSON_SCHEMA, TestCase, TestCaseParseError, parse_test_cases
 from .static_context import StaticContextProvider
+from .synthetic_data import SyntheticTestData
 
 
 _SHORTFALL_REMINDER = Template("""
@@ -112,6 +113,7 @@ class TestCaseGenerator:
         static_parameter_top_k: int = 6,
         static_track_top_k: int = 4,
         static_icd_top_k: int = 6,
+        static_message_object_top_k: int = 2,
         caf_mapping: CafMapping | None = None,
     ):
         self.llm_client = llm_client
@@ -120,6 +122,7 @@ class TestCaseGenerator:
         self.static_parameter_top_k = static_parameter_top_k
         self.static_track_top_k = static_track_top_k
         self.static_icd_top_k = static_icd_top_k
+        self.static_message_object_top_k = static_message_object_top_k
         self.caf_mapping = caf_mapping
 
     def generate(
@@ -174,8 +177,19 @@ class TestCaseGenerator:
             if self.static_context
             else ("", ())
         )
+        # Only to narrow the ICD block to the message(s) this requirement is
+        # about; the datasheet prompt gets no object card.
+        message_objects = (
+            self.static_context.message_object_hits(
+                parsed.query_text, self.static_message_object_top_k
+            )
+            if self.static_context
+            else []
+        )
         icd_context = (
-            self.static_context.icd_context(parsed.query_text, self.static_icd_top_k)
+            self.static_context.icd_context(
+                parsed.query_text, self.static_icd_top_k, message_objects
+            )
             if self.static_context
             else ""
         )
@@ -325,6 +339,8 @@ class TestScriptGenerator:
         static_parameter_top_k: int = 6,
         static_icd_top_k: int = 6,
         static_message_object_top_k: int = 2,
+        synthetic_data: SyntheticTestData | None = None,
+        caf_mapping: CafMapping | None = None,
     ):
         self.llm_client = llm_client
         self.prompts = prompts
@@ -335,6 +351,8 @@ class TestScriptGenerator:
         self.static_parameter_top_k = static_parameter_top_k
         self.static_icd_top_k = static_icd_top_k
         self.static_message_object_top_k = static_message_object_top_k
+        self.synthetic_data = synthetic_data
+        self.caf_mapping = caf_mapping
 
     def generate(
         self,
@@ -347,11 +365,17 @@ class TestScriptGenerator:
 
         started = time.monotonic()
         parsed = parse_requirement(requirement_text)
+        # Which reference script's calls this requirement is guaranteed: the
+        # one written for the same chapter. CAF's section is the authority;
+        # the requirement's own heading covers one CAF doesn't list yet.
+        caf_entry = self.caf_mapping.entry_for(parsed.requirement_id) if self.caf_mapping else None
+        chapter = (caf_entry.section.split(".")[0] if caf_entry and caf_entry.section else None) or parsed.chapter
         logger.info(
-            "Script generation started: requirement=%s, %d test case(s), subdivision=%s",
+            "Script generation started: requirement=%s, %d test case(s), subdivision=%s, chapter=%s",
             parsed.requirement_id or "(not stated)",
             len(test_cases),
             subdivision or "(none)",
+            chapter or "(unknown)",
         )
 
         # Retrieval for the script is driven by the test cases as well as the
@@ -364,7 +388,7 @@ class TestScriptGenerator:
         # message_object_hits. Fetched before the general API pass so that
         # pass can skip re-documenting the same class via keyword search.
         message_objects = (
-            self.static_context.message_object_hits(query, self.static_message_object_top_k)
+            self.static_context.message_object_hits(query, self.static_message_object_top_k, chapter)
             if self.static_context
             else []
         )
@@ -374,7 +398,9 @@ class TestScriptGenerator:
         message_object_classes = frozenset(class_name for _, class_name, _ in message_objects)
 
         api_context = (
-            self.static_context.api_context(query, self.static_api_top_k, message_object_classes)
+            self.static_context.api_context(
+                query, self.static_api_top_k, message_object_classes, chapter
+            )
             if self.static_context
             else ""
         )
@@ -383,7 +409,7 @@ class TestScriptGenerator:
         # cases describe.
         track_context = (
             self.static_context.track_context(
-                query, self.static_track_top_k, subdivision
+                query, self.static_track_top_k, subdivision, include_blocks=True
             )
             if self.static_context
             else ""
@@ -398,8 +424,14 @@ class TestScriptGenerator:
             else ""
         )
         icd_context = (
-            self.static_context.icd_context(query, self.static_icd_top_k)
+            self.static_context.icd_context(query, self.static_icd_top_k, message_objects)
             if self.static_context
+            else ""
+        )
+        sends_bulletin = any(instance.endswith("_01041") for instance, _, _ in message_objects)
+        synthetic_context = (
+            self.synthetic_data.context(subdivision, include_bulletin_segments=sends_bulletin)
+            if self.synthetic_data
             else ""
         )
 
@@ -415,15 +447,18 @@ class TestScriptGenerator:
             parameter_context=parameter_context
             or "(No parameter records — no TBC/CFG/THE identifier is named. Use none.)",
             icd_context=icd_context or "(No ICD fields — none named. Use no numeric field code.)",
+            synthetic_context=synthetic_context or "(No synthetic test data.)",
         )
         logger.info(
             "Context assembled: message_objects=%d chars, api=%d chars, track=%d chars, "
-            "parameter=%d chars, icd=%d chars; sending %d-char prompt to the script LLM call",
+            "parameter=%d chars, icd=%d chars, synthetic=%d chars; "
+            "sending %d-char prompt to the script LLM call",
             len(message_object_context),
             len(api_context),
             len(track_context),
             len(parameter_context),
             len(icd_context),
+            len(synthetic_context),
             len(user_prompt),
         )
         _log_context_block("message objects", message_object_context)
@@ -431,6 +466,7 @@ class TestScriptGenerator:
         _log_context_block("track_data", track_context)
         _log_context_block("parameter records", parameter_context)
         _log_context_block("icd", icd_context)
+        _log_context_block("synthetic", synthetic_context)
 
         raw = self.llm_client.generate(
             prompt.system,
@@ -850,11 +886,15 @@ _POSITION_FIELD_RE = re.compile(
 )
 
 
+def _as_miles(raw: float) -> str:
+    return f"{raw / 10000:.4f}".rstrip("0").rstrip(".")
+
+
 def _add_position_provenance_comments(
     script: str, static_context: "StaticContextProvider | None", subdivision: str | None
 ) -> str:
     """Adds the block-id/milepost-range comment the system prompt asks for
-    (`# 385000(point) is within block 13022 (380000-390000)`) to every
+    (`# 7.5(point) is within block 2001 (0-8.287 miles)`) to every
     `set_position(...)` call that doesn't already carry a trailing comment,
     resolved deterministically against the real track data instead of left
     to the model to remember on every generation -- observed gap: none of
@@ -882,14 +922,17 @@ def _add_position_provenance_comments(
             point = float(point_text)
         except ValueError:
             return match.group(0)
-        block = static_context.find_block(subdivision, track_group, point)
+        # set_position takes miles; the track data's block ranges are in
+        # 1/10000 mile, so the lookup converts and the comment reads in miles.
+        block = static_context.find_block(subdivision, track_group, point * 10000)
         if block is None:
             return match.group(0)
         block_id, start, end = block
         point_disp = int(point) if point.is_integer() else point
-        start_disp = int(start) if start.is_integer() else start
-        end_disp = int(end) if end.is_integer() else end
-        comment = f"  # {point_disp}(point) is within block {block_id} ({start_disp}-{end_disp})"
+        comment = (
+            f"  # {point_disp}(point) is within block {block_id} "
+            f"({_as_miles(start)}-{_as_miles(end)} miles)"
+        )
         return match.group(0) + comment
 
     fixed = _SET_POSITION_LINE_RE.sub(_replace, script)

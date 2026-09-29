@@ -1,0 +1,32 @@
+13 Switch Enforcement 
+13.1 Unmonitored Switches on PTC Track over which Movement is 
+Governed by a Signal or Monitored Indirectly by Track Circuit 
+13.1.1 Facing Approach 
+2.     L2R7983 
+When an unmonitored switch is on the train’s calculated route and 
+• that switch is greater than the calculated position uncertainty in advance of the leading edge of the 
+train and 
+• the train’s calculated route indicates a facing approach to that switch and 
+• the track within one foot in approach to the switch point of that switch is PTC track and 
+• the on-board segment does not have a stored “suspended” status for that switch and 
+• the facing approach to that switch is designated in the track data as  
+o “protected by track circuit, stop required” or 
+o “protected by track circuit, no stop required” and 
+• that switch is not located in any restricted speed target of any type other than  
+o a head-end only restricted speed TBC137 mph becoming located signal target or 
+o a head-end only restricted speed TBC137 mph route based cab signal target with an 
+enforcement delay greater than zero (0) seconds or 
+o a head-end only restricted speed TBC137 mph speed enforcement cab signal target with an 
+enforcement delay greater than zero (0) seconds and 
+• that switch is not located in any head-end only zero (0) mph unknown signal target and 
+• that switch is not located in any head-end only zero (0) mph signal target and 
+• that switch is not located in any head-end only zero (0) mph enter main track target and 
+• that switch is not located in any head-end only zero (0) mph pass signal at stop target and 
+• that switch is not located in any head-end only zero (0) mph reverse movement target and 
+• the “Indicate Switch Alignment” key has not been pressed for that switch since the switch appeared on 
+the train’s calculated route greater than the calculated position uncertainty in advance of the leading 
+edge of the train and 
+• the locomotive track location and calculated direction of movement were known prior to the leading 
+edge of the train coming within calculated position uncertainty of the track circuit in which the switch is 
+located, 
+the on-board segment shall utilize the NORMAL switch position for generating the train’s calculated route.  

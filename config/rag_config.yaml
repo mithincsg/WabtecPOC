@@ -9,8 +9,11 @@ static_api_top_k: 20         # python_apis method/class chunks per request.
 static_track_top_k: 2        # track-XML chunks per request (filtered to the
                               # subdivision picked in the UI)
 static_parameter_top_k: 4    # TBC/CFG/THE parameter records per request
-static_icd_top_k: 2          # ICD message-field decodings (Train Type codes,
-                              # enumerations, ranges) per request
+static_track_block_window: 8 # blocks per track, with raw + miles mileposts,
+                              # always sent to the script call alongside the
+                              # track-name legend
+static_icd_top_k: 4          # ICD message-field decodings (Train Type codes,
+                              # enumerations, ranges) per request -- a ceiling
 static_message_object_top_k: 2   # office-message objects (script call only) --
                               # the message(s) a requirement's own wording
                               # identifies (e.g. wcr_office_01041 for a

@@ -1,0 +1,1664 @@
+{
+  "synthetic": true,
+  "note": "Synthetic test data from scripts/build_synthetic_data.py, not a delivered source. Segments and targets are derived from data/track_data; keys, types, speeds and timings are fixed defaults.",
+  "generated_from": "data/track_data",
+  "generated_at": "2026-09-27T09:10:12+00:00",
+  "target_keys": {
+    "TGT_TYPE": "target type, one of the TGT_TYPE values",
+    "TGT_START_LOC_BLOCKID": "block the target starts in",
+    "TGT_START_LOC_OFFSET": "start offset into that block, feet",
+    "TGT_START_LOC_DISTID": "PTC subdivision/district id of the start block",
+    "TGT_END_LOC_BLOCKID": "block the target ends in",
+    "TGT_END_LOC_OFFSET": "end offset into that block, feet",
+    "TGT_END_LOC_DISTID": "PTC subdivision/district id of the end block",
+    "TGT_SPEED_LIMIT": "target speed, mph",
+    "TGT_SPEED_APPLICABILITY": "speed applicability code",
+    "TGT_RESTRICTED_SPEED": "restricted speed flag"
+  },
+  "target_types": {
+    "work zone bulletin": "WORK ZONE",
+    "PTC suspension bulletin": "PTC SUSPENSION",
+    "block speed restriction (track)": "BLOCK SPEED RESTRICTION",
+    "subdivision speed restriction (track)": "SUBDIV SPEED RESTRICTION",
+    "signal becoming located": "SIGNAL-BECOMING LOCATED",
+    "unknown signal": "UNKNOWN SIGNAL",
+    "signal, train orientation change": "SIGNAL-TRAIN ORIENT CHANGE"
+  },
+  "target_defaults": {
+    "work_zone_speed_mph": 0,
+    "ptc_suspension_speed_mph": 0,
+    "bulletin_speed_restriction_mph": 25,
+    "speed_applicability": 0
+  },
+  "timings": {
+    "target_wait_seconds": 60,
+    "long_target_wait_seconds": 120,
+    "ack_wait_seconds": 10,
+    "effective_in_effect_now_minutes": 0,
+    "effective_becoming_soon_minutes": 1
+  },
+  "subdivisions": {
+    "08101": {
+      "tracks": {
+        "Main1": {
+          "sub_id": 8101,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 0.7495,
+            "block": 2004
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 12500,
+                "end": 17500,
+                "start_miles": 1.25,
+                "end_miles": 1.75,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 1222,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 3664,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 15000,
+                "end": 25000,
+                "start_miles": 1.5,
+                "end_miles": 2.5,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 2443,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2006,
+                  "TGT_END_LOC_OFFSET": 2444,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 12500,
+                "end": 14500,
+                "start_miles": 1.25,
+                "end_miles": 1.45,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 1222,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 2199,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              },
+              {
+                "start": 25500,
+                "end": 27500,
+                "start_miles": 2.55,
+                "end_miles": 2.75,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2006,
+                  "TGT_START_LOC_OFFSET": 2688,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2006,
+                  "TGT_END_LOC_OFFSET": 3666,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 12000,
+                "end": 15000,
+                "start_miles": 1.2,
+                "end_miles": 1.5,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 977,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 2443,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              },
+              {
+                "start": 15000,
+                "end": 18000,
+                "start_miles": 1.5,
+                "end_miles": 1.8,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 2443,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 3909,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 12000,
+                "end": 16000,
+                "start_miles": 1.2,
+                "end_miles": 1.6,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 977,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 2932,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              },
+              {
+                "start": 14000,
+                "end": 18000,
+                "start_miles": 1.4,
+                "end_miles": 1.8,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 1954,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 3909,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 2005,
+              "TGT_START_LOC_OFFSET": 977,
+              "TGT_START_LOC_DISTID": 8101,
+              "TGT_END_LOC_BLOCKID": 2005,
+              "TGT_END_LOC_OFFSET": 3909,
+              "TGT_END_LOC_DISTID": 8101
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 4,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 0.7495,
+                "block": 2004
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2005,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8101,
+                "TGT_END_LOC_BLOCKID": 2005,
+                "TGT_END_LOC_OFFSET": 4886,
+                "TGT_END_LOC_DISTID": 8101,
+                "TGT_SPEED_LIMIT": 71
+              }
+            },
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 1.5,
+                "block": 2005
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2006,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8101,
+                "TGT_END_LOC_BLOCKID": 2006,
+                "TGT_END_LOC_OFFSET": 4888,
+                "TGT_END_LOC_DISTID": 8101,
+                "TGT_SPEED_LIMIT": 71
+              }
+            }
+          ]
+        },
+        "Main2": {
+          "sub_id": 8101,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 0.7495,
+            "block": 3002
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 12500,
+                "end": 17500,
+                "start_miles": 1.25,
+                "end_miles": 1.75,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 1222,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 3665,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 15000,
+                "end": 25000,
+                "start_miles": 1.5,
+                "end_miles": 2.5,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 2444,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3004,
+                  "TGT_END_LOC_OFFSET": 2444,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 12500,
+                "end": 14500,
+                "start_miles": 1.25,
+                "end_miles": 1.45,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 1222,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 2199,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              },
+              {
+                "start": 25500,
+                "end": 27500,
+                "start_miles": 2.55,
+                "end_miles": 2.75,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3004,
+                  "TGT_START_LOC_OFFSET": 2688,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3004,
+                  "TGT_END_LOC_OFFSET": 3666,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 12000,
+                "end": 15000,
+                "start_miles": 1.2,
+                "end_miles": 1.5,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 977,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 2444,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              },
+              {
+                "start": 15000,
+                "end": 18000,
+                "start_miles": 1.5,
+                "end_miles": 1.8,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 2444,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 3910,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 12000,
+                "end": 16000,
+                "start_miles": 1.2,
+                "end_miles": 1.6,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 977,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 2932,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              },
+              {
+                "start": 14000,
+                "end": 18000,
+                "start_miles": 1.4,
+                "end_miles": 1.8,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 1955,
+                  "TGT_START_LOC_DISTID": 8101,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 3910,
+                  "TGT_END_LOC_DISTID": 8101
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 3003,
+              "TGT_START_LOC_OFFSET": 977,
+              "TGT_START_LOC_DISTID": 8101,
+              "TGT_END_LOC_BLOCKID": 3003,
+              "TGT_END_LOC_OFFSET": 3910,
+              "TGT_END_LOC_DISTID": 8101
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 4,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 0.7495,
+                "block": 3002
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3003,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8101,
+                "TGT_END_LOC_BLOCKID": 3003,
+                "TGT_END_LOC_OFFSET": 4887,
+                "TGT_END_LOC_DISTID": 8101,
+                "TGT_SPEED_LIMIT": 71
+              }
+            },
+            {
+              "track_train_type": 2,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 1.5,
+                "block": 3003
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3004,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8101,
+                "TGT_END_LOC_BLOCKID": 3004,
+                "TGT_END_LOC_OFFSET": 4888,
+                "TGT_END_LOC_DISTID": 8101,
+                "TGT_SPEED_LIMIT": 71
+              }
+            }
+          ]
+        }
+      }
+    },
+    "08102": {
+      "tracks": {
+        "Main1": {
+          "sub_id": 8102,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 0.059,
+            "block": 2001
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 3385,
+                "end": 7795,
+                "start_miles": 0.3385,
+                "end_miles": 0.7795,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 1074,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 3220,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 5590,
+                "end": 15000,
+                "start_miles": 0.559,
+                "end_miles": 1.5,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 2147,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2003,
+                  "TGT_END_LOC_OFFSET": 2290,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 3385,
+                "end": 5149,
+                "start_miles": 0.3385,
+                "end_miles": 0.5149,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 1074,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 1932,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              },
+              {
+                "start": 15500,
+                "end": 17500,
+                "start_miles": 1.55,
+                "end_miles": 1.75,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2003,
+                  "TGT_START_LOC_OFFSET": 2520,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2003,
+                  "TGT_END_LOC_OFFSET": 3436,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 2944,
+                "end": 5590,
+                "start_miles": 0.2944,
+                "end_miles": 0.559,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 859,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 2147,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              },
+              {
+                "start": 5590,
+                "end": 8236,
+                "start_miles": 0.559,
+                "end_miles": 0.8236,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 2147,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 3435,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 2944,
+                "end": 6472,
+                "start_miles": 0.2944,
+                "end_miles": 0.6472,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 859,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 2576,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              },
+              {
+                "start": 4708,
+                "end": 8236,
+                "start_miles": 0.4708,
+                "end_miles": 0.8236,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 1718,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 3435,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 2002,
+              "TGT_START_LOC_OFFSET": 859,
+              "TGT_START_LOC_DISTID": 8102,
+              "TGT_END_LOC_BLOCKID": 2002,
+              "TGT_END_LOC_OFFSET": 3435,
+              "TGT_END_LOC_DISTID": 8102
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 0.059,
+                "block": 2001
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2002,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8102,
+                "TGT_END_LOC_BLOCKID": 2002,
+                "TGT_END_LOC_OFFSET": 4294,
+                "TGT_END_LOC_DISTID": 8102,
+                "TGT_SPEED_LIMIT": 72
+              }
+            },
+            {
+              "track_train_type": 4,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 0.559,
+                "block": 2002
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2003,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8102,
+                "TGT_END_LOC_BLOCKID": 2003,
+                "TGT_END_LOC_OFFSET": 4581,
+                "TGT_END_LOC_DISTID": 8102,
+                "TGT_SPEED_LIMIT": 72
+              }
+            }
+          ]
+        },
+        "Main2": {
+          "sub_id": 8102,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 0.059,
+            "block": 3001
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 3385,
+                "end": 7795,
+                "start_miles": 0.3385,
+                "end_miles": 0.7795,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 1074,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 3222,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 5590,
+                "end": 15000,
+                "start_miles": 0.559,
+                "end_miles": 1.5,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 2148,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 2290,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 3385,
+                "end": 5149,
+                "start_miles": 0.3385,
+                "end_miles": 0.5149,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 1074,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 1933,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              },
+              {
+                "start": 15500,
+                "end": 17500,
+                "start_miles": 1.55,
+                "end_miles": 1.75,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 2520,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 3436,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 2944,
+                "end": 5590,
+                "start_miles": 0.2944,
+                "end_miles": 0.559,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 859,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 2148,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              },
+              {
+                "start": 5590,
+                "end": 8236,
+                "start_miles": 0.559,
+                "end_miles": 0.8236,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 2148,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 3437,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 2944,
+                "end": 6472,
+                "start_miles": 0.2944,
+                "end_miles": 0.6472,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 859,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 2578,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              },
+              {
+                "start": 4708,
+                "end": 8236,
+                "start_miles": 0.4708,
+                "end_miles": 0.8236,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 1718,
+                  "TGT_START_LOC_DISTID": 8102,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 3437,
+                  "TGT_END_LOC_DISTID": 8102
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 3002,
+              "TGT_START_LOC_OFFSET": 859,
+              "TGT_START_LOC_DISTID": 8102,
+              "TGT_END_LOC_BLOCKID": 3002,
+              "TGT_END_LOC_OFFSET": 3437,
+              "TGT_END_LOC_DISTID": 8102
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 2,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 0.059,
+                "block": 3001
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3002,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8102,
+                "TGT_END_LOC_BLOCKID": 3002,
+                "TGT_END_LOC_OFFSET": 4296,
+                "TGT_END_LOC_DISTID": 8102,
+                "TGT_SPEED_LIMIT": 72
+              }
+            },
+            {
+              "track_train_type": 2,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 0.559,
+                "block": 3002
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3003,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8102,
+                "TGT_END_LOC_BLOCKID": 3003,
+                "TGT_END_LOC_OFFSET": 4581,
+                "TGT_END_LOC_DISTID": 8102,
+                "TGT_SPEED_LIMIT": 72
+              }
+            }
+          ]
+        }
+      }
+    },
+    "08214": {
+      "tracks": {
+        "Main1": {
+          "sub_id": 8214,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 8.433,
+            "block": 2003
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 91662,
+                "end": 103408,
+                "start_miles": 9.1662,
+                "end_miles": 10.3408,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 3215,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2004,
+                  "TGT_END_LOC_OFFSET": 9395,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 97535,
+                "end": 110415,
+                "start_miles": 9.7535,
+                "end_miles": 11.0415,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 6345,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 589,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 91662,
+                "end": 96360,
+                "start_miles": 9.1662,
+                "end_miles": 9.636,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 3215,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2004,
+                  "TGT_END_LOC_OFFSET": 5719,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              },
+              {
+                "start": 110528,
+                "end": 110982,
+                "start_miles": 11.0528,
+                "end_miles": 11.0982,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2005,
+                  "TGT_START_LOC_OFFSET": 649,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2005,
+                  "TGT_END_LOC_OFFSET": 894,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 90488,
+                "end": 97535,
+                "start_miles": 9.0488,
+                "end_miles": 9.7535,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 2589,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2004,
+                  "TGT_END_LOC_OFFSET": 6345,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              },
+              {
+                "start": 97535,
+                "end": 104582,
+                "start_miles": 9.7535,
+                "end_miles": 10.4582,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 6345,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2004,
+                  "TGT_END_LOC_OFFSET": 9992,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 90488,
+                "end": 99884,
+                "start_miles": 9.0488,
+                "end_miles": 9.9884,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 2589,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2004,
+                  "TGT_END_LOC_OFFSET": 7597,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              },
+              {
+                "start": 95186,
+                "end": 104582,
+                "start_miles": 9.5186,
+                "end_miles": 10.4582,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2004,
+                  "TGT_START_LOC_OFFSET": 5093,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 2004,
+                  "TGT_END_LOC_OFFSET": 9992,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 2004,
+              "TGT_START_LOC_OFFSET": 2589,
+              "TGT_START_LOC_DISTID": 8214,
+              "TGT_END_LOC_BLOCKID": 2004,
+              "TGT_END_LOC_OFFSET": 9992,
+              "TGT_END_LOC_DISTID": 8214
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 8.433,
+                "block": 2003
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2004,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8214,
+                "TGT_END_LOC_BLOCKID": 2004,
+                "TGT_END_LOC_OFFSET": 12385,
+                "TGT_END_LOC_DISTID": 8214,
+                "TGT_SPEED_LIMIT": 50
+              }
+            },
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 9.7535,
+                "block": 2004
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2005,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8214,
+                "TGT_END_LOC_BLOCKID": 2005,
+                "TGT_END_LOC_OFFSET": 1200,
+                "TGT_END_LOC_DISTID": 8214,
+                "TGT_SPEED_LIMIT": 50
+              }
+            }
+          ]
+        },
+        "Main2": {
+          "sub_id": 8214,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 4.461,
+            "block": 3005
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 84012,
+                "end": 84378,
+                "start_miles": 8.4012,
+                "end_miles": 8.4378,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 100,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3006,
+                  "TGT_END_LOC_OFFSET": 300,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 84195,
+                "end": 84715,
+                "start_miles": 8.4195,
+                "end_miles": 8.4715,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 200,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3007,
+                  "TGT_END_LOC_OFFSET": 86,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 84012,
+                "end": 84158,
+                "start_miles": 8.4012,
+                "end_miles": 8.4158,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 100,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3006,
+                  "TGT_END_LOC_OFFSET": 180,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              },
+              {
+                "start": 84730,
+                "end": 84792,
+                "start_miles": 8.473,
+                "end_miles": 8.4792,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3007,
+                  "TGT_START_LOC_OFFSET": 95,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3007,
+                  "TGT_END_LOC_OFFSET": 129,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 83976,
+                "end": 84195,
+                "start_miles": 8.3976,
+                "end_miles": 8.4195,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 80,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3006,
+                  "TGT_END_LOC_OFFSET": 200,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              },
+              {
+                "start": 84195,
+                "end": 84414,
+                "start_miles": 8.4195,
+                "end_miles": 8.4414,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 200,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3006,
+                  "TGT_END_LOC_OFFSET": 320,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 83976,
+                "end": 84268,
+                "start_miles": 8.3976,
+                "end_miles": 8.4268,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 80,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3006,
+                  "TGT_END_LOC_OFFSET": 240,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              },
+              {
+                "start": 84122,
+                "end": 84414,
+                "start_miles": 8.4122,
+                "end_miles": 8.4414,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3006,
+                  "TGT_START_LOC_OFFSET": 160,
+                  "TGT_START_LOC_DISTID": 8214,
+                  "TGT_END_LOC_BLOCKID": 3006,
+                  "TGT_END_LOC_OFFSET": 320,
+                  "TGT_END_LOC_DISTID": 8214
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 3006,
+              "TGT_START_LOC_OFFSET": 80,
+              "TGT_START_LOC_DISTID": 8214,
+              "TGT_END_LOC_BLOCKID": 3006,
+              "TGT_END_LOC_OFFSET": 320,
+              "TGT_END_LOC_DISTID": 8214
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 4.461,
+                "block": 3005
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3006,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8214,
+                "TGT_END_LOC_BLOCKID": 3006,
+                "TGT_END_LOC_OFFSET": 400,
+                "TGT_END_LOC_DISTID": 8214,
+                "TGT_SPEED_LIMIT": 50
+              }
+            },
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 8.4195,
+                "block": 3006
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3007,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8214,
+                "TGT_END_LOC_BLOCKID": 3007,
+                "TGT_END_LOC_OFFSET": 173,
+                "TGT_END_LOC_DISTID": 8214,
+                "TGT_SPEED_LIMIT": 50
+              }
+            }
+          ]
+        }
+      }
+    },
+    "08236": {
+      "tracks": {
+        "Main1": {
+          "sub_id": 8236,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 165.4165,
+            "block": 2001
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 1654840,
+                "end": 1655460,
+                "start_miles": 165.484,
+                "end_miles": 165.546,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 180,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 540,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 1655150,
+                "end": 1656735,
+                "start_miles": 165.515,
+                "end_miles": 165.6735,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 360,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2003,
+                  "TGT_END_LOC_OFFSET": 490,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 1654840,
+                "end": 1655088,
+                "start_miles": 165.484,
+                "end_miles": 165.5088,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 180,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 324,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              },
+              {
+                "start": 1656832,
+                "end": 1657218,
+                "start_miles": 165.6832,
+                "end_miles": 165.7218,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2003,
+                  "TGT_START_LOC_OFFSET": 539,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2003,
+                  "TGT_END_LOC_OFFSET": 735,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 1654778,
+                "end": 1655150,
+                "start_miles": 165.4778,
+                "end_miles": 165.515,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 144,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 360,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              },
+              {
+                "start": 1655150,
+                "end": 1655522,
+                "start_miles": 165.515,
+                "end_miles": 165.5522,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 360,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 576,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 1654778,
+                "end": 1655274,
+                "start_miles": 165.4778,
+                "end_miles": 165.5274,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 144,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 432,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              },
+              {
+                "start": 1655026,
+                "end": 1655522,
+                "start_miles": 165.5026,
+                "end_miles": 165.5522,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 2002,
+                  "TGT_START_LOC_OFFSET": 288,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 2002,
+                  "TGT_END_LOC_OFFSET": 576,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 2002,
+              "TGT_START_LOC_OFFSET": 144,
+              "TGT_START_LOC_DISTID": 8236,
+              "TGT_END_LOC_BLOCKID": 2002,
+              "TGT_END_LOC_OFFSET": 576,
+              "TGT_END_LOC_DISTID": 8236
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 165.4165,
+                "block": 2001
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2002,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8236,
+                "TGT_END_LOC_BLOCKID": 2002,
+                "TGT_END_LOC_OFFSET": 720,
+                "TGT_END_LOC_DISTID": 8236,
+                "TGT_SPEED_LIMIT": 50
+              }
+            },
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 165.515,
+                "block": 2002
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 2003,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8236,
+                "TGT_END_LOC_BLOCKID": 2003,
+                "TGT_END_LOC_OFFSET": 980,
+                "TGT_END_LOC_DISTID": 8236,
+                "TGT_SPEED_LIMIT": 50
+              }
+            }
+          ]
+        },
+        "Main2": {
+          "sub_id": 8236,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 165.4395,
+            "block": 3001
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 1655170,
+                "end": 1655530,
+                "start_miles": 165.517,
+                "end_miles": 165.553,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 94,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 284,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 1655350,
+                "end": 1655730,
+                "start_miles": 165.535,
+                "end_miles": 165.573,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 189,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 50,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 1655170,
+                "end": 1655314,
+                "start_miles": 165.517,
+                "end_miles": 165.5314,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 94,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 170,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              },
+              {
+                "start": 1655732,
+                "end": 1655740,
+                "start_miles": 165.5732,
+                "end_miles": 165.574,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3003,
+                  "TGT_START_LOC_OFFSET": 54,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3003,
+                  "TGT_END_LOC_OFFSET": 74,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 1655134,
+                "end": 1655350,
+                "start_miles": 165.5134,
+                "end_miles": 165.535,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 76,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 189,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              },
+              {
+                "start": 1655350,
+                "end": 1655566,
+                "start_miles": 165.535,
+                "end_miles": 165.5566,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 189,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 302,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 1655134,
+                "end": 1655422,
+                "start_miles": 165.5134,
+                "end_miles": 165.5422,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 76,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 227,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              },
+              {
+                "start": 1655278,
+                "end": 1655566,
+                "start_miles": 165.5278,
+                "end_miles": 165.5566,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 3002,
+                  "TGT_START_LOC_OFFSET": 151,
+                  "TGT_START_LOC_DISTID": 8236,
+                  "TGT_END_LOC_BLOCKID": 3002,
+                  "TGT_END_LOC_OFFSET": 302,
+                  "TGT_END_LOC_DISTID": 8236
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 3002,
+              "TGT_START_LOC_OFFSET": 76,
+              "TGT_START_LOC_DISTID": 8236,
+              "TGT_END_LOC_BLOCKID": 3002,
+              "TGT_END_LOC_OFFSET": 302,
+              "TGT_END_LOC_DISTID": 8236
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 165.4395,
+                "block": 3001
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3002,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8236,
+                "TGT_END_LOC_BLOCKID": 3002,
+                "TGT_END_LOC_OFFSET": 378,
+                "TGT_END_LOC_DISTID": 8236,
+                "TGT_SPEED_LIMIT": 50
+              }
+            },
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 165.535,
+                "block": 3002
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 3003,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8236,
+                "TGT_END_LOC_BLOCKID": 3003,
+                "TGT_END_LOC_OFFSET": 99,
+                "TGT_END_LOC_DISTID": 8236,
+                "TGT_SPEED_LIMIT": 50
+              }
+            }
+          ]
+        }
+      }
+    },
+    "08880": {
+      "tracks": {
+        "Main": {
+          "sub_id": 8880,
+          "direction": "increasing",
+          "approach": {
+            "point_miles": 2.406,
+            "block": 1001
+          },
+          "bulletin_segments": {
+            "single_block": [
+              {
+                "start": 26980,
+                "end": 29740,
+                "start_miles": 2.698,
+                "end_miles": 2.974,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 574,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1002,
+                  "TGT_END_LOC_OFFSET": 1722,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              }
+            ],
+            "spanning": [
+              {
+                "start": 28360,
+                "end": 31275,
+                "start_miles": 2.836,
+                "end_miles": 3.1275,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 1148,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1003,
+                  "TGT_END_LOC_OFFSET": 84,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              }
+            ],
+            "non_contiguous": [
+              {
+                "start": 26980,
+                "end": 28084,
+                "start_miles": 2.698,
+                "end_miles": 2.8084,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 574,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1002,
+                  "TGT_END_LOC_OFFSET": 1033,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              },
+              {
+                "start": 31290,
+                "end": 31352,
+                "start_miles": 3.129,
+                "end_miles": 3.1352,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1003,
+                  "TGT_START_LOC_OFFSET": 92,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1003,
+                  "TGT_END_LOC_OFFSET": 125,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              }
+            ],
+            "contiguous": [
+              {
+                "start": 26704,
+                "end": 28360,
+                "start_miles": 2.6704,
+                "end_miles": 2.836,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 459,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1002,
+                  "TGT_END_LOC_OFFSET": 1148,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              },
+              {
+                "start": 28360,
+                "end": 30016,
+                "start_miles": 2.836,
+                "end_miles": 3.0016,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 1148,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1002,
+                  "TGT_END_LOC_OFFSET": 1839,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              }
+            ],
+            "overlapping": [
+              {
+                "start": 26704,
+                "end": 28912,
+                "start_miles": 2.6704,
+                "end_miles": 2.8912,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 459,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1002,
+                  "TGT_END_LOC_OFFSET": 1377,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              },
+              {
+                "start": 27808,
+                "end": 30016,
+                "start_miles": 2.7808,
+                "end_miles": 3.0016,
+                "target": {
+                  "TGT_START_LOC_BLOCKID": 1002,
+                  "TGT_START_LOC_OFFSET": 918,
+                  "TGT_START_LOC_DISTID": 8880,
+                  "TGT_END_LOC_BLOCKID": 1002,
+                  "TGT_END_LOC_OFFSET": 1839,
+                  "TGT_END_LOC_DISTID": 8880
+                }
+              }
+            ],
+            "merged_target": {
+              "TGT_START_LOC_BLOCKID": 1002,
+              "TGT_START_LOC_OFFSET": 459,
+              "TGT_START_LOC_DISTID": 8880,
+              "TGT_END_LOC_BLOCKID": 1002,
+              "TGT_END_LOC_OFFSET": 1839,
+              "TGT_END_LOC_DISTID": 8880
+            }
+          },
+          "speed_restriction_targets": [
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 2.406,
+                "block": 1001
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 1002,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8880,
+                "TGT_END_LOC_BLOCKID": 1002,
+                "TGT_END_LOC_OFFSET": 2441,
+                "TGT_END_LOC_DISTID": 8880,
+                "TGT_SPEED_LIMIT": 20
+              }
+            },
+            {
+              "track_train_type": 1,
+              "track_direction": 1,
+              "approach": {
+                "point_miles": 2.836,
+                "block": 1002
+              },
+              "target": {
+                "TGT_TYPE": "BLOCK SPEED RESTRICTION",
+                "TGT_START_LOC_BLOCKID": 1003,
+                "TGT_START_LOC_OFFSET": 0,
+                "TGT_START_LOC_DISTID": 8880,
+                "TGT_END_LOC_BLOCKID": 1003,
+                "TGT_END_LOC_OFFSET": 167,
+                "TGT_END_LOC_DISTID": 8880,
+                "TGT_SPEED_LIMIT": 20
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -36,6 +36,7 @@ class ParsedRequirement:
     raw_text: str
     query_text: str
     functional_area: str | None
+    chapter: str | None
 
 
 def parse_requirement(raw_text: str) -> ParsedRequirement:
@@ -63,6 +64,7 @@ def parse_requirement(raw_text: str) -> ParsedRequirement:
         raw_text=raw_text,
         query_text=normalize_text(body),
         functional_area=_detect_functional_area(cleaned),
+        chapter=requirement_chapter(cleaned),
     )
 
 
@@ -79,3 +81,12 @@ def _detect_functional_area(text: str) -> str | None:
         if depth == 0:
             break
     return best[1] if best else None
+
+
+def requirement_chapter(text: str) -> str | None:
+    """The top-level section number of the first numbered heading --
+    "13 Switch Enforcement" and "13.1.1 Facing Approach" both give "13" --
+    which is what groups a requirement with the reference script written for
+    the same feature."""
+    match = _AREA_HEADING_RE.search(text)
+    return match.group(0).strip().split()[0].split(".")[0] if match else None

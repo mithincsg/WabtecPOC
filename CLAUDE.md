@@ -101,6 +101,14 @@ The app reads `config/caf_mapping.json`, not the workbook, so this must be
 re-run for a workbook edit to take effect; the app then picks up the
 regenerated JSON on its next request, no restart needed.
 
+Rebuild the synthetic test data after track data changes:
+
+```bash
+python scripts/build_synthetic_data.py      # data/track_data -> data/synthetic_data/synthetic_test_data.json
+```
+
+It is read once at startup, so restart the server afterwards.
+
 Run the backend:
 
 ```bash
@@ -200,6 +208,25 @@ names a real one from the picked subdivision, and the script later
 hard-codes the same track. `track_subdivisions` in the datasheet response
 reports which subdivision was searched.
 
+What every script needs from the track is not left to keyword search. A
+subdivision is ~1,000 chunks, and BM25 over requirement prose returned one
+arbitrary BlockFeature chunk and no track names. So every track context
+opens with the guaranteed railroad SCAC and the **TrackNameFeature legend**,
+and the script call (`include_blocks=True`) adds a **block table**: the
+first `static_track_block_window` blocks of each track, plus every block a
+retrieved feature row belongs to (`BlockFeature <id> >` prefix). Mileposts
+are written both ways, `raw [miles]`. The XML stores 1/10000 mile,
+`set_position` takes miles, and 01041 `set_segment` takes the raw value, so
+the model is never left to convert. The keyword slots skip the tables these
+cover (`TrackNameFeature`, `BlockFeature`, `Subdivision`) and go to
+situational feature rows (signals, crossings, speed restrictions). The
+datasheet call gets the legend but not the block table. A case names a
+block only where it turns on one, and the table costs ~1k tokens.
+
+`_add_position_provenance_comments` resolves a `set_position` point in the
+same units: it multiplies the miles value by 10000 before `find_block`
+compares it with the raw block ranges.
+
 Which subdivision each call searches is decided by **one** thing: the
 subdivision picked in the UI (`subdivision` on the generate requests,
 `GET /api/track-subdivisions` for the list).
@@ -279,6 +306,65 @@ multi-word field name the requirement or test cases contain (`train type`,
 `static_icd_top_k` is a ceiling. Single-word names (`Speed`, `Direction`)
 are not matched. Both generations get this block, and the prompts require
 every coded input to be written `<field>=<code> (<meaning>)` from it.
+
+When the requirement matches a **message object** (below), both calls
+narrow the ICD block to that message's fields. They also add the fields
+behind its enumeration matches (a match on `Bulletin Type=6 (Work zone)`
+adds the Bulletin Type table). Name matching alone had given L2R10673
+`Position Uncertainty` from two locomotive reports (01071, 02054) the test
+never sends, and never the Bulletin Type table it does set. When there is no
+message object, name matching decides as before.
+
+**Message objects** (`message_object_hits`) are the office message(s) a
+requirement is about, and the only numbered API classes the script prompt
+documents in full. The requirement never writes an ICD number. It uses the
+message's vocabulary instead: its name, its multi-word field names, and its
+enumeration meanings ("work zone" is a Bulletin Type value of 01041). Those
+terms are indexed off the ICD chunks for every message that has a declared
+`wcr_office_<id>` / `wcr_ivoc_office_<id>` instance. A message needs **two**
+matched terms, because on a signals requirement "restricted speed" alone
+named a signal-target category, not the 01041 field. A term shared by more
+than three messages ("Not used") never counts. A message whose terms are
+all already matched by a higher-ranked one is dropped: 01043 matches "work
+zone" only because it shares 01041's Bulletin Type table.
+
+Each selected object reaches the script prompt as a compact card, one line
+per method: `wcr_office_01041.set_segment(params: Dict)`, its docstring's
+first line, and its dict keys. The card's header names the object and the
+matched terms, so the model calls the right object and passes the right
+value. Before this, API chunks carried a bare method name that ~50 classes
+share, and the office message a test sends only reached the prompt when
+BM25 happened to rank it. Per-class BM25 aggregation was tried for
+selecting the object and was unreliable: it ranked `PublicOffice1001` first
+for L2R10673. `static_message_object_top_k` caps how many objects are
+selected, and the general API pass skips their classes.
+
+**Example families** (`_discover_example_families`) give a requirement the
+calls its feature's reference script is built from. A method is core only if
+more than half the reference scripts call it, and only one script is a
+manual switch script. So `wcr_user_act.user_action`/`observe`/`input_verification`,
+`wcr_start_up.automation_setup` and the driving calls were never core. BM25
+ranked them outside the keyword slots (`user_action` 486th), and switch
+scripts came out without them.
+
+- **Families are keyed by chapter.** The chapter is the top-level section
+  number: CAF `13.1.1` gives `13`, and a `13 Switch Enforcement` heading does
+  too. At startup each reference script is grouped under the chapter of its
+  requirement text's heading. A script whose text has no numbered heading
+  (L2R10673) joins no family.
+- **What a family adds to the script call.** The script call resolves the
+  requirement's chapter from CAF's section, falling back to its own heading.
+  That chapter's non-core (class, method) pairs are guaranteed like core
+  methods, and they count toward `static_api_top_k`. Message-object slots
+  the wording left open go to the office messages that script sends.
+- **Only names are taken.** Families take API names and message ids, never
+  values.
+- **It extends itself.** Adding a reference script with a numbered heading
+  covers its chapter with no code change.
+
+A family's office-message cards cost ~5-6k characters each. A chapter-18
+signals requirement now carries 01030 and 01051 even when its wording
+matches neither.
 
 Retrieval of those records is **exact identifier lookup only** — there is no
 BM25 arm. Any TBC/CFG/THE identifier the requirement states is looked up by
@@ -463,6 +549,47 @@ contains a real source for the values it asks for — this is why script
 generation runs its own track-data and static-API passes rather than relying
 on the reference scripts alone.
 
+### Synthetic test data (`src/rag/synthetic_data.py`)
+
+Some values a script needs exist in no delivered source. `verify_target_details`
+takes `TGT_*` keys that nothing documents (`HASH_TABLE_TGT` is not in
+`data/python_apis/`), and where a bulletin's limits land as target block +
+offset is not stated anywhere. Nor are bulletin segment limits or
+wait/effective timings. Under "never write a value no block contains" those
+calls came out empty. `data/synthetic_data/synthetic_test_data.json`
+(config `synthetic_data_file`) supplies them, labelled synthetic, under
+`=== SYNTHETIC TEST DATA ===` in the **script** prompt only.
+
+`scripts/build_synthetic_data.py` derives it from the real track XML,
+per subdivision, for the first two main tracks:
+
+- **Bulletin segments.** Each segment is placed on real blocks inside the
+  prompt's block window. The shapes are single block, spanning two blocks,
+  non-contiguous, contiguous and overlapping. Blocks are chained by
+  milepost continuity, and a block any other block on the track overlaps
+  (a parallel branch) is skipped, so every point resolves through
+  `find_block` to the block stated.
+- **Target location.** Each segment's target location is its mileposts
+  interpolated over the block's `BlockMilepostMeasureFeature`
+  (offset <-> milepost) pairs. This reproduces the known 8214 block 2008
+  offsets exactly.
+- **Speed restriction targets.** Real `BlockSpeedRestrictionFeature` rows
+  reshaped into target form.
+
+Only the key meanings, `TGT_TYPE` strings, speeds and timings are fixed
+constants in the script. The key and type names are API vocabulary taken
+from the reference scripts, since they exist nowhere else. No
+subdivision, block or offset comes from `data/Examples/`.
+
+It is a lookup by picked subdivision, not a `static_sources` folder.
+Ranked in BM25 these rows would compete with real track and parameter
+records. A real block's value always wins; synthetic values carry a
+`# synthetic (...)` comment. No subdivision picked means keys and timings
+only. The bulletin segments are most of the block (~4k of ~7k characters,
+all CPU prefill), so they are sent only when the requirement matched the
+01041 message object; the keys, timings and track speed restriction
+targets are sent regardless.
+
 ### Prompts (`config/prompts.yaml`)
 
 Every system/user prompt lives here. Edits take effect on the next request —
@@ -595,6 +722,7 @@ resort, not the first: that is the grounding the output depends on.
 | `config/rag_config.yaml` | Static-context top-k, Ollama host/model/limits/timeouts, `max_test_cases` ceiling |
 | `config/prompts.yaml` | Every system and user prompt |
 | `data/parameter_config/*.json` | TBC/CFG/THE parameter records — generated from the guide PDF by `scripts/convert_parameter_guide.py` |
+| `data/synthetic_data/synthetic_test_data.json` | Synthetic TGT_* target values, bulletin segments and timings for the script prompt — generated from `data/track_data/` by `scripts/build_synthetic_data.py` |
 | `config/caf_mapping.json` | Requirement → feature, i.e. the datasheet's `Folder` column — generated from `data/CAF.xlsx` by `scripts/convert_caf_mapping.py` |
 | `.env` | Backend host/port, CORS origins, log level, `MAX_CONCURRENT_GENERATIONS`, Ollama host override, frontend dev-server port/proxy target |
 
@@ -633,6 +761,8 @@ data/parameter_config/       parameter records (indexed); generated, not hand-ed
 data/ICD_data/               icd_messages.json, ICD message field decodings (indexed)
 data/Examples/               reference triples; design-time source for the prompts.yaml templates, not read at request time
 data/CAF.xlsx                requirement -> feature (Folder) source; converted, not read at request time
+data/synthetic_data/         synthetic_test_data.json, script-prompt fallback values; generated, not indexed
+scripts/build_synthetic_data.py  data/track_data -> data/synthetic_data/
 scripts/convert_caf_mapping.py   data/CAF.xlsx -> config/caf_mapping.json
 scripts/convert_parameter_guide.py  guide PDF -> data/parameter_config/
 src/kb_ingestion/
@@ -642,6 +772,7 @@ src/kb_ingestion/
 src/rag/
   requirement_parser.py        requirement ID + functional area
   caf_mapping.py                requirement -> feature (the Folder column), from config/caf_mapping.json
+  synthetic_data.py             synthetic test data lookup for the script prompt
   static_context.py             the BM25 index over every source folder, and the searches over it
   keyword_index.py               BM25 scoring, tokenization, identifier boost
   cache.py                       the generation result cache

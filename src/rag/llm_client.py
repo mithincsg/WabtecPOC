@@ -349,6 +349,14 @@ class OllamaClient:
                     message = event.get("message") or {}
                     piece = message.get("content") or ""
                     if piece:
+                        if not chunks:
+                            # Logged here rather than read off the final event:
+                            # a stream `stop_when` closes early never gets it.
+                            logger.info(
+                                "%s first answer token after %.1fs (prompt processing)",
+                                self.config.model,
+                                time.monotonic() - started,
+                            )
                         chunks.append(piece)
                         print(piece, end="", flush=True)
                         # Checked on every piece, not just ones containing
